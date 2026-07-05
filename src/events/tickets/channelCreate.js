@@ -1,5 +1,5 @@
 const { Events, ChannelType } = require("discord.js");
-const { prisma } = require("../config/prisma");
+const { prisma } = require("../../config/prisma");
 
 module.exports = {
   name: Events.ChannelCreate,
