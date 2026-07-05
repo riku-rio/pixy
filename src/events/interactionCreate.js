@@ -35,8 +35,8 @@ async function safeReply(interaction, payload) {
 
   const finalPayload =
     typeof payload === "string"
-      ? { content: payload, ephemeral: true }
-      : { ephemeral: true, ...payload };
+      ? { content: payload, flags: 64 }
+      : { flags: 64, ...payload };
 
   try {
     if (interaction.replied || interaction.deferred) {
