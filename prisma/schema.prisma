@@ -18,6 +18,11 @@ model GuildConfig {
 
   learnedAnswers   LearnedAnswer[]
   ticketChannels   TicketChannel[]
+
+  aiEnabled Boolean @default(true)
+  aiProvider String @default("groq")
+  aiModel String?
+  aiSystemPrompt String?
 }
 
 model LearnedAnswer {
@@ -44,7 +49,31 @@ model TicketChannel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  aiEnabled Boolean @default(true)
+  lastAiReplyAt DateTime?
+  lastUserMessageAt DateTime?
+
   guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@index([guildId])
+}
+
+model AiUsageLog {
+  id String @id @default(cuid())
+
+  guildId String
+  channelId String
+  userId String?
+
+  provider String
+  model String?
+
+  promptTokens Int?
+  completionTokens Int?
+  totalTokens Int?
+
+  status String
+  error String?
+
+  createdAt DateTime @default(now())
 }

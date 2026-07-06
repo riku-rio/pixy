@@ -32,7 +32,9 @@ module.exports = {
         },
       });
 
-      await channel.send("Hello 👋");
+      await channel.send(
+        "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket."
+      );
     } catch (error) {
       console.error("ChannelCreate ticket handler failed:", error);
     }
