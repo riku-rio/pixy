@@ -23,9 +23,31 @@ Pixy AI is an AI-powered Discord bot that automates ticket support by answering 
 * ✅ AI replies inside ticket channels
 * ✅ Groq AI provider integration
 * ✅ Basic AI capability guardrails
-* ⏳ `/learn` command
-* ⏳ Store custom Q&A per server
-* ⏳ Context injection for learned Q&A
+* ✅ `/learn` command
+* ✅ Add custom Q&A items per server
+* ✅ Delete learned Q&A items by ID, question, answer, or selected match
+* ✅ List learned Q&A items with paginated ephemeral embeds
+* ✅ Clear all learned Q&A items with confirmation buttons
+* ✅ Store custom Q&A per server using Prisma
+* ✅ Context injection for learned Q&A inside AI ticket replies
+* ✅ Limit learned answers per server using `maxLearnedItems`
+
+## Commands
+
+### `/setup`
+
+Configure the ticket category where Pixy AI should detect newly created ticket channels.
+
+### `/learn`
+
+Manage server-specific learned Q&A items.
+
+Available actions:
+
+* `/learn action:add` — Add a new learned Q&A item using a modal.
+* `/learn action:delete` — Delete a learned Q&A item by ID, question, answer, or selected match.
+* `/learn action:list` — Show learned Q&A items in paginated ephemeral embeds.
+* `/learn action:clear` — Delete all learned Q&A items for the server after confirmation.
 
 ## Tech Stack
 
@@ -40,11 +62,13 @@ Pixy AI is an AI-powered Discord bot that automates ticket support by answering 
 ```txt
 src/
 ├── ai/
+│   └── providers/
 ├── config/
 ├── events/
+│   └── tickets/
 ├── prefix/
 ├── slash/
-├── utils/
+└── utils/
 ```
 
 ## Setup
@@ -73,20 +97,40 @@ Start the bot
 node .
 ```
 
+## Development
+
+For local development with SQLite, you can run:
+
+```bash
+npx prisma migrate dev
+```
+
+Then start the bot:
+
+```bash
+node .
+```
+
 ## Environment Variables
 
 Create a `.env` file.
 
 ```env
+# Bot
+NODE_ENV=development
 DISCORD_TOKEN=
-DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
+DISCORD_CLIENT_ID=
 PREFIX=^
+
+# Database
 DATABASE_URL="file:./dev.db"
 
-GROQ_API_KEY=
-GROQ_MODEL=openai/gpt-oss-120b
+# Groq
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
 
+# Provider
 AI_PROVIDER=groq
 AI_MAX_OUTPUT_TOKENS=500
 AI_TEMPERATURE=0.3
@@ -97,26 +141,22 @@ AI_RECENT_MESSAGES_LIMIT=8
 
 ## Roadmap
 
-### v0.2 — Learning & Context
-
-* `/learn` command
-* Store custom Q&A per server
-* Inject learned Q&A into AI ticket context
-* Limit learned answers per server using `maxLearnedItems`
-
 ### v0.3 — Knowledge Types & Safe Agent Actions
 
-* Add learning types:
+* Expand learning into multiple knowledge types:
 
   * Q&A knowledge
   * Free-form knowledge
-* Add safe AI tool/action requests
-* Allow AI to request limited ticket actions using structured JSON
-* Start with safe actions only:
+
+* Add safe AI tool/action requests.
+* Allow AI to request limited ticket actions using structured JSON.
+* Add validation before executing any AI-requested action.
+* Start with safe ticket actions only:
 
   * Close ticket
   * Rename ticket
   * Mark ticket as pending
+
 * Avoid dangerous actions by default:
 
   * Ban
