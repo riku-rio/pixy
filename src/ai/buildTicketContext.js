@@ -1,4 +1,5 @@
 const { aiConfig } = require("../config/ai");
+const { prisma } = require("../config/prisma");
 
 function cleanMessageContent(content) {
   return String(content || "")
@@ -28,17 +29,54 @@ async function getRecentChannelMessages(channel, currentMessageId) {
   }
 }
 
+async function getLearnedQna(guildId) {
+  if (!guildId) return [];
+
+  try {
+    const config = await prisma.guildConfig.findUnique({
+      where: {
+        guildId,
+      },
+      select: {
+        maxLearnedItems: true,
+      },
+    });
+
+    const take = Math.max(1, Math.min(Number(config?.maxLearnedItems || 20), 100));
+
+    return await prisma.learnedAnswer.findMany({
+      where: {
+        guildId,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take,
+      select: {
+        id: true,
+        question: true,
+        answer: true,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch learned Q&A:", error);
+    return [];
+  }
+}
+
 async function buildTicketContext({ message }) {
   const recentMessages = await getRecentChannelMessages(
     message.channel,
     message.id
   );
 
+  const learnedQna = await getLearnedQna(message.guild?.id);
+
   return {
     guildName: message.guild?.name || null,
     channelName: message.channel?.name || null,
     recentMessages,
-    learnedQna: [],
+    learnedQna,
   };
 }
 
