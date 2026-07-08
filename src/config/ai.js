@@ -11,6 +11,15 @@ const aiConfig = {
   replyCooldownMs: Number(process.env.AI_REPLY_COOLDOWN_MS || 3000),
   maxInputChars: Number(process.env.AI_MAX_INPUT_CHARS || 2500),
   recentMessagesLimit: Number(process.env.AI_RECENT_MESSAGES_LIMIT || 8),
+
+  agentActionsEnabled:
+    String(process.env.AI_AGENT_ACTIONS_ENABLED || "true").toLowerCase() !== "false",
+
+  ticketCloseDeleteDelayMs: Number(
+    process.env.AI_TICKET_CLOSE_DELETE_DELAY_MS || 2500
+  ),
+
+  actionMaxReplyChars: Number(process.env.AI_ACTION_MAX_REPLY_CHARS || 1000),
 };
 
 module.exports = { aiConfig };

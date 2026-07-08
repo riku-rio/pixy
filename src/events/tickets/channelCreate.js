@@ -26,14 +26,26 @@ module.exports = {
         create: {
           guildId: channel.guild.id,
           channelId: channel.id,
+          closed: false,
+          status: "open",
         },
         update: {
           closed: false,
+          status: "open",
+          closedByAi: false,
+          closedAt: null,
+          renamedByAiAt: null,
+          lastAiAction: null,
+          lastAiActionAt: null,
         },
       });
 
       await channel.send(
-        "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket."
+        [
+          "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket.",
+          "",
+          "مرحبًا 👋 أنا Pixy AI. اكتب سؤالك هنا وسأحاول مساعدتك أثناء مراجعة فريق الدعم للتذكرة.",
+        ].join("\n")
       );
     } catch (error) {
       console.error("ChannelCreate ticket handler failed:", error);

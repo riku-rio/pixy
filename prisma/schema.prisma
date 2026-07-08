@@ -51,7 +51,9 @@ model TicketChannel {
   guildId   String
   channelId String   @unique
   userId    String?
+
   closed    Boolean  @default(false)
+  status    String   @default("open") // open | closed
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -60,9 +62,17 @@ model TicketChannel {
   lastAiReplyAt DateTime?
   lastUserMessageAt DateTime?
 
+  closedByAi Boolean @default(false)
+  closedAt DateTime?
+
+  renamedByAiAt DateTime?
+  lastAiAction String?
+  lastAiActionAt DateTime?
+
   guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@index([guildId])
+  @@index([guildId, status])
 }
 
 model AiUsageLog {
