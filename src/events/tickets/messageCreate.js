@@ -114,6 +114,7 @@ module.exports = {
         userMessage,
         recentMessages: context.recentMessages,
         learnedQna: context.learnedQna,
+        learnedFreeform: context.learnedFreeform,
         customSystemPrompt: config.aiSystemPrompt,
       });
 

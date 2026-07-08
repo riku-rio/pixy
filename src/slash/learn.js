@@ -16,7 +16,12 @@ const { prisma } = require("../config/prisma");
 const EPHEMERAL = 64;
 const PAGE_SIZE = 10;
 
-const ADD_MODAL_PREFIX = "learn_add:";
+const KNOWLEDGE_TYPE_QNA = "qna";
+const KNOWLEDGE_TYPE_FREEFORM = "freeform";
+
+const ADD_QNA_MODAL_PREFIX = "learn_add_qna:";
+const ADD_FREEFORM_MODAL_PREFIX = "learn_add_freeform:";
+
 const DELETE_MODAL_PREFIX = "learn_delete:";
 const LIST_BUTTON_PREFIX = "learn_list:";
 const CLEAR_CONFIRM_PREFIX = "learn_clear_confirm:";
@@ -97,6 +102,27 @@ async function assertOwnerAndAdmin(interaction, ownerUserId) {
   return true;
 }
 
+function formatKnowledgeType(type) {
+  if (type === "freeform") return "Free-form";
+  return "Q&A";
+}
+
+function getItemPreviewLines(item) {
+  if (item.type === "freeform") {
+    return [
+      `Full ID: \`${item.id}\``,
+      `**Title:** ${truncateText(item.title, 220)}`,
+      `**Content:** ${truncateText(item.content, 220)}`,
+    ];
+  }
+
+  return [
+    `Full ID: \`${item.id}\``,
+    `**Q:** ${truncateText(item.question, 220)}`,
+    `**A:** ${truncateText(item.answer, 220)}`,
+  ];
+}
+
 async function buildListPayload({ guildId, ownerUserId, page }) {
   const total = await prisma.learnedAnswer.count({
     where: {
@@ -119,26 +145,24 @@ async function buildListPayload({ guildId, ownerUserId, page }) {
   });
 
   const embed = new EmbedBuilder()
-    .setTitle("Learned Q&A Items")
+    .setTitle("Learned Knowledge Items")
     .setFooter({
       text: `Page ${safePage + 1}/${totalPages} • Total ${total} • Delete accepts full ID or unique short ID`,
     });
 
   if (!items.length) {
-    embed.setDescription("No learned Q&A items have been added for this server yet.");
+    embed.setDescription("No learned knowledge items have been added for this server yet.");
   } else {
-    embed.setDescription("Use `/learn action:delete` and enter the full ID or a unique short ID.");
+    embed.setDescription(
+      "Items can be Q&A or free-form knowledge. Use `/learn action:delete` with the ID to remove any item."
+    );
 
     items.forEach((item, index) => {
       const number = safePage * PAGE_SIZE + index + 1;
 
       embed.addFields({
-        name: `${number}. ID: ${shortId(item.id)}`,
-        value: [
-          `Full ID: \`${item.id}\``,
-          `**Q:** ${truncateText(item.question, 220)}`,
-          `**A:** ${truncateText(item.answer, 220)}`,
-        ].join("\n"),
+        name: `${number}. ${formatKnowledgeType(item.type)} • ID: ${shortId(item.id)}`,
+        value: getItemPreviewLines(item).join("\n"),
       });
     });
   }
@@ -163,7 +187,7 @@ async function buildListPayload({ guildId, ownerUserId, page }) {
   };
 }
 
-async function findLearnedAnswer(guildId, input) {
+async function findLearnedItem(guildId, input) {
   const query = cleanText(input);
   const queryLower = query.toLowerCase();
 
@@ -206,7 +230,9 @@ async function findLearnedAnswer(guildId, input) {
   const exactTextMatches = items.filter((item) => {
     return (
       normalizeForCompare(item.question) === queryLower ||
-      normalizeForCompare(item.answer) === queryLower
+      normalizeForCompare(item.answer) === queryLower ||
+      normalizeForCompare(item.title) === queryLower ||
+      normalizeForCompare(item.content) === queryLower
     );
   });
 
@@ -228,7 +254,9 @@ async function findLearnedAnswer(guildId, input) {
   const containsMatches = items.filter((item) => {
     return (
       normalizeForCompare(item.question).includes(queryLower) ||
-      normalizeForCompare(item.answer).includes(queryLower)
+      normalizeForCompare(item.answer).includes(queryLower) ||
+      normalizeForCompare(item.title).includes(queryLower) ||
+      normalizeForCompare(item.content).includes(queryLower)
     );
   });
 
@@ -257,8 +285,16 @@ function formatMatches(matches) {
   return matches
     .slice(0, 5)
     .map((item, index) => {
+      if (item.type === "freeform") {
+        return [
+          `${index + 1}. ${formatKnowledgeType(item.type)} • ID: \`${item.id}\``,
+          `Title: ${truncateText(item.title, 90)}`,
+          `Content: ${truncateText(item.content, 90)}`,
+        ].join("\n");
+      }
+
       return [
-        `${index + 1}. ID: \`${item.id}\``,
+        `${index + 1}. ${formatKnowledgeType(item.type)} • ID: \`${item.id}\``,
         `Q: ${truncateText(item.question, 90)}`,
         `A: ${truncateText(item.answer, 90)}`,
       ].join("\n");
@@ -278,19 +314,23 @@ module.exports = {
         .setRequired(true)
         .addChoices(
           {
-            name: "add",
-            value: "add",
+            name: "Add Q&A",
+            value: "add-qna",
           },
           {
-            name: "delete",
+            name: "Add free-form knowledge",
+            value: "add-freeform",
+          },
+          {
+            name: "Delete item",
             value: "delete",
           },
           {
-            name: "list",
+            name: "List items",
             value: "list",
           },
           {
-            name: "clear",
+            name: "Clear all items",
             value: "clear",
           }
         )
@@ -318,9 +358,9 @@ module.exports = {
 
     const action = interaction.options.getString("action", true);
 
-    if (action === "add") {
+    if (action === "add-qna" || action === "add") {
       const modal = new ModalBuilder()
-        .setCustomId(`${ADD_MODAL_PREFIX}${interaction.user.id}`)
+        .setCustomId(`${ADD_QNA_MODAL_PREFIX}${interaction.user.id}`)
         .setTitle("Add learned Q&A");
 
       const questionInput = new TextInputBuilder()
@@ -348,18 +388,48 @@ module.exports = {
       return;
     }
 
+    if (action === "add-freeform") {
+      const modal = new ModalBuilder()
+        .setCustomId(`${ADD_FREEFORM_MODAL_PREFIX}${interaction.user.id}`)
+        .setTitle("Add free-form knowledge");
+
+      const titleInput = new TextInputBuilder()
+        .setCustomId("title")
+        .setLabel("Title")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(120)
+        .setPlaceholder("Example: Refund policy");
+
+      const contentInput = new TextInputBuilder()
+        .setCustomId("content")
+        .setLabel("Knowledge content")
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(2500)
+        .setPlaceholder("Write the server-specific policy, note, rule, or information.");
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(titleInput),
+        new ActionRowBuilder().addComponents(contentInput)
+      );
+
+      await interaction.showModal(modal);
+      return;
+    }
+
     if (action === "delete") {
       const modal = new ModalBuilder()
         .setCustomId(`${DELETE_MODAL_PREFIX}${interaction.user.id}`)
-        .setTitle("Delete learned Q&A");
+        .setTitle("Delete learned item");
 
       const deleteInput = new TextInputBuilder()
         .setCustomId("delete_query")
-        .setLabel("ID, question, or answer")
+        .setLabel("ID, title, question, or content")
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMaxLength(500)
-        .setPlaceholder("Paste full ID, short unique ID, question, or answer.");
+        .setPlaceholder("Paste full ID, short unique ID, title, question, or content.");
 
       modal.addComponents(new ActionRowBuilder().addComponents(deleteInput));
 
@@ -400,7 +470,7 @@ module.exports = {
 
       await interaction.reply({
         content:
-          "Are you sure you want to delete **all learned Q&A items** for this server?",
+          "Are you sure you want to delete **all learned knowledge items** for this server?",
         components: [row],
         flags: EPHEMERAL,
       });
@@ -409,10 +479,10 @@ module.exports = {
 
   modalHandlers: [
     {
-      customIdPrefix: ADD_MODAL_PREFIX,
+      customIdPrefix: ADD_QNA_MODAL_PREFIX,
 
       async execute(interaction) {
-        const ownerUserId = interaction.customId.slice(ADD_MODAL_PREFIX.length);
+        const ownerUserId = interaction.customId.slice(ADD_QNA_MODAL_PREFIX.length);
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
@@ -438,9 +508,24 @@ module.exports = {
           return;
         }
 
-        const existingItems = await prisma.learnedAnswer.findMany({
+        const totalItems = await prisma.learnedAnswer.count({
           where: {
             guildId: interaction.guild.id,
+          },
+        });
+
+        if (totalItems >= maxItems) {
+          await interaction.reply({
+            content: `This server already reached the learned knowledge limit: **${maxItems}** item(s).`,
+            flags: EPHEMERAL,
+          });
+          return;
+        }
+
+        const existingQnaItems = await prisma.learnedAnswer.findMany({
+          where: {
+            guildId: interaction.guild.id,
+            type: KNOWLEDGE_TYPE_QNA,
           },
           select: {
             id: true,
@@ -448,7 +533,7 @@ module.exports = {
           },
         });
 
-        const duplicate = existingItems.find((item) => {
+        const duplicate = existingQnaItems.find((item) => {
           return normalizeForCompare(item.question) === normalizeForCompare(question);
         });
 
@@ -460,17 +545,10 @@ module.exports = {
           return;
         }
 
-        if (existingItems.length >= maxItems) {
-          await interaction.reply({
-            content: `This server already reached the learned Q&A limit: **${maxItems}** items.`,
-            flags: EPHEMERAL,
-          });
-          return;
-        }
-
         const item = await prisma.learnedAnswer.create({
           data: {
             guildId: interaction.guild.id,
+            type: KNOWLEDGE_TYPE_QNA,
             question,
             answer,
           },
@@ -480,7 +558,70 @@ module.exports = {
           content: [
             "Done. The Q&A item has been learned.",
             `ID: \`${item.id}\``,
-            `Total: **${existingItems.length + 1}/${maxItems}**`,
+            `Total: **${totalItems + 1}/${maxItems}**`,
+          ].join("\n"),
+          flags: EPHEMERAL,
+        });
+      },
+    },
+    {
+      customIdPrefix: ADD_FREEFORM_MODAL_PREFIX,
+
+      async execute(interaction) {
+        const ownerUserId = interaction.customId.slice(ADD_FREEFORM_MODAL_PREFIX.length);
+
+        if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
+
+        const title = cleanText(interaction.fields.getTextInputValue("title"));
+        const content = cleanText(interaction.fields.getTextInputValue("content"));
+
+        if (!title || !content) {
+          await interaction.reply({
+            content: "Title and content are required.",
+            flags: EPHEMERAL,
+          });
+          return;
+        }
+
+        const config = await ensureGuildConfig(interaction.guild.id);
+        const maxItems = Number(config.maxLearnedItems || 20);
+
+        if (maxItems <= 0) {
+          await interaction.reply({
+            content: "Learning is currently disabled because `maxLearnedItems` is 0.",
+            flags: EPHEMERAL,
+          });
+          return;
+        }
+
+        const totalItems = await prisma.learnedAnswer.count({
+          where: {
+            guildId: interaction.guild.id,
+          },
+        });
+
+        if (totalItems >= maxItems) {
+          await interaction.reply({
+            content: `This server already reached the learned knowledge limit: **${maxItems}** item(s).`,
+            flags: EPHEMERAL,
+          });
+          return;
+        }
+
+        const item = await prisma.learnedAnswer.create({
+          data: {
+            guildId: interaction.guild.id,
+            type: KNOWLEDGE_TYPE_FREEFORM,
+            title,
+            content,
+          },
+        });
+
+        await interaction.reply({
+          content: [
+            "Done. The free-form knowledge item has been learned.",
+            `ID: \`${item.id}\``,
+            `Total: **${totalItems + 1}/${maxItems}**`,
           ].join("\n"),
           flags: EPHEMERAL,
         });
@@ -497,7 +638,7 @@ module.exports = {
         await ensureGuildConfig(interaction.guild.id);
 
         const query = cleanText(interaction.fields.getTextInputValue("delete_query"));
-        const result = await findLearnedAnswer(interaction.guild.id, query);
+        const result = await findLearnedItem(interaction.guild.id, query);
 
         if (result.status === "empty") {
           await interaction.reply({
@@ -510,7 +651,7 @@ module.exports = {
         if (result.status === "not_found") {
           await interaction.reply({
             content:
-              "No learned Q&A item matched that input. Use `/learn action:list` and try deleting with the ID.",
+              "No learned knowledge item matched that input. Use `/learn action:list` and try deleting with the ID.",
             flags: EPHEMERAL,
           });
           return;
@@ -531,12 +672,8 @@ module.exports = {
 
           matches.slice(0, 10).forEach((item, index) => {
             embed.addFields({
-              name: `${index + 1}. ID: ${shortId(item.id)}`,
-              value: [
-                `Full ID: \`${item.id}\``,
-                `**Q:** ${truncateText(item.question, 180)}`,
-                `**A:** ${truncateText(item.answer, 180)}`,
-              ].join("\n"),
+              name: `${index + 1}. ${formatKnowledgeType(item.type)} • ID: ${shortId(item.id)}`,
+              value: getItemPreviewLines(item).join("\n"),
             });
           });
 
@@ -547,8 +684,8 @@ module.exports = {
             .setMaxValues(1)
             .addOptions(
               matches.map((item) => ({
-                label: truncateText(item.question || item.id, 90),
-                description: `ID: ${shortId(item.id)} • ${truncateText(item.answer, 60)}`,
+                label: truncateText(item.type === "freeform" ? item.title : item.question, 90),
+                description: `${formatKnowledgeType(item.type)} • ID: ${shortId(item.id)}`,
                 value: item.id,
               }))
             );
@@ -573,9 +710,12 @@ module.exports = {
 
         await interaction.reply({
           content: [
-            "Done. The learned Q&A item has been deleted.",
+            "Done. The learned knowledge item has been deleted.",
+            `Type: **${formatKnowledgeType(item.type)}**`,
             `ID: \`${item.id}\``,
-            `Q: ${truncateText(item.question, 160)}`,
+            item.type === "freeform"
+              ? `Title: ${truncateText(item.title, 160)}`
+              : `Q: ${truncateText(item.question, 160)}`,
           ].join("\n"),
           flags: EPHEMERAL,
         });
@@ -618,7 +758,7 @@ module.exports = {
         });
 
         await interaction.update({
-          content: `Done. Deleted **${result.count}** learned Q&A item(s) from this server.`,
+          content: `Done. Deleted **${result.count}** learned knowledge item(s) from this server.`,
           embeds: [],
           components: [],
         });
@@ -633,7 +773,55 @@ module.exports = {
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
         await interaction.update({
-          content: "Cancelled. No learned Q&A items were deleted.",
+          content: "Cancelled. No learned knowledge items were deleted.",
+          embeds: [],
+          components: [],
+        });
+      },
+    },
+  ],
+  selectMenuHandlers: [
+    {
+      customIdPrefix: DELETE_SELECT_PREFIX,
+
+      async execute(interaction) {
+        const ownerUserId = interaction.customId.slice(DELETE_SELECT_PREFIX.length);
+
+        if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
+
+        const itemId = interaction.values?.[0];
+
+        const item = await prisma.learnedAnswer.findFirst({
+          where: {
+            id: itemId,
+            guildId: interaction.guild.id,
+          },
+        });
+
+        if (!item) {
+          await interaction.update({
+            content: "This learned knowledge item no longer exists.",
+            embeds: [],
+            components: [],
+          });
+          return;
+        }
+
+        await prisma.learnedAnswer.delete({
+          where: {
+            id: item.id,
+          },
+        });
+
+        await interaction.update({
+          content: [
+            "Done. The learned knowledge item has been deleted.",
+            `Type: **${formatKnowledgeType(item.type)}**`,
+            `ID: \`${item.id}\``,
+            item.type === "freeform"
+              ? `Title: ${truncateText(item.title, 160)}`
+              : `Q: ${truncateText(item.question, 160)}`,
+          ].join("\n"),
           embeds: [],
           components: [],
         });

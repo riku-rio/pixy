@@ -28,8 +28,14 @@ model GuildConfig {
 model LearnedAnswer {
   id        String   @id @default(cuid())
   guildId   String
-  question  String
-  answer    String
+
+  type      String   @default("qna") // qna | freeform
+
+  question  String?
+  answer    String?
+
+  title     String?
+  content   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -37,6 +43,7 @@ model LearnedAnswer {
   guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@index([guildId])
+  @@index([guildId, type])
 }
 
 model TicketChannel {

@@ -1,3 +1,17 @@
+function cleanText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateText(value, maxLength = 1500) {
+  const text = cleanText(value);
+
+  if (text.length <= maxLength) return text;
+
+  return `${text.slice(0, maxLength - 3).trim()}...`;
+}
+
 function formatRecentMessages(recentMessages = []) {
   if (!recentMessages.length) {
     return "No recent messages available.";
@@ -19,7 +33,26 @@ function formatLearnedQna(learnedQna = []) {
 
   return learnedQna
     .map((item, index) => {
-      return `${index + 1}. Q: ${item.question}\nA: ${item.answer}`;
+      return [
+        `${index + 1}.`,
+        `Q: ${truncateText(item.question, 500)}`,
+        `A: ${truncateText(item.answer, 1500)}`,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+function formatLearnedFreeform(learnedFreeform = []) {
+  if (!learnedFreeform.length) {
+    return "No server-specific free-form knowledge has been provided yet.";
+  }
+
+  return learnedFreeform
+    .map((item, index) => {
+      return [
+        `${index + 1}. ${truncateText(item.title || "Untitled", 120)}`,
+        truncateText(item.content, 2500),
+      ].join("\n");
     })
     .join("\n\n");
 }
@@ -31,6 +64,7 @@ function buildTicketPrompt({
   userMessage,
   recentMessages = [],
   learnedQna = [],
+  learnedFreeform = [],
   customSystemPrompt,
 }) {
   const baseSystemPrompt =
@@ -45,7 +79,7 @@ function buildTicketPrompt({
       "What you can do:",
       "- Answer support questions.",
       "- Explain general Discord features like Nitro, Server Boosts, roles, permissions, channels, and tickets.",
-      "- Use the provided ticket context and learned Q&A when available.",
+      "- Use the provided ticket context, learned Q&A, and free-form knowledge when available.",
 
       "What you cannot do:",
       "- You cannot close tickets.",
@@ -63,8 +97,12 @@ function buildTicketPrompt({
 
       "Knowledge rules:",
       "- Answer general Discord questions from your own knowledge.",
-      "- If the question depends on this specific server's private rules, prices, staff decisions, ban reasons, custom roles, or policies, only answer from the provided context or learned Q&A.",
+      "- Use learned Q&A for direct question-answer matches.",
+      "- Use free-form knowledge as background server-specific facts, policies, prices, rules, steps, notes, or instructions.",
+      "- If learned Q&A and free-form knowledge conflict, prefer the more specific learned Q&A.",
+      "- If the question depends on this specific server's private rules, prices, staff decisions, ban reasons, custom roles, or policies, only answer from the provided context, learned Q&A, or free-form knowledge.",
       "- If required server-specific context is missing, say that a support member needs to confirm.",
+      "- Do not invent server-specific policies, prices, rules, or decisions.",
 
       "Style:",
       "- Be concise, friendly, and practical.",
@@ -105,6 +143,9 @@ function buildTicketPrompt({
     "",
     "Server learned Q&A:",
     formatLearnedQna(learnedQna),
+    "",
+    "Server free-form knowledge:",
+    formatLearnedFreeform(learnedFreeform),
   ].join("\n");
 
   return [

@@ -1,6 +1,9 @@
 const { aiConfig } = require("../config/ai");
 const { prisma } = require("../config/prisma");
 
+const KNOWLEDGE_TYPE_QNA = "qna";
+const KNOWLEDGE_TYPE_FREEFORM = "freeform";
+
 function cleanMessageContent(content) {
   return String(content || "")
     .replace(/\s+/g, " ")
@@ -29,8 +32,13 @@ async function getRecentChannelMessages(channel, currentMessageId) {
   }
 }
 
-async function getLearnedQna(guildId) {
-  if (!guildId) return [];
+async function getLearnedKnowledge(guildId) {
+  if (!guildId) {
+    return {
+      learnedQna: [],
+      learnedFreeform: [],
+    };
+  }
 
   try {
     const config = await prisma.guildConfig.findUnique({
@@ -44,7 +52,7 @@ async function getLearnedQna(guildId) {
 
     const take = Math.max(1, Math.min(Number(config?.maxLearnedItems || 20), 100));
 
-    return await prisma.learnedAnswer.findMany({
+    const items = await prisma.learnedAnswer.findMany({
       where: {
         guildId,
       },
@@ -54,13 +62,25 @@ async function getLearnedQna(guildId) {
       take,
       select: {
         id: true,
+        type: true,
         question: true,
         answer: true,
+        title: true,
+        content: true,
       },
     });
+
+    return {
+      learnedQna: items.filter((item) => item.type === KNOWLEDGE_TYPE_QNA),
+      learnedFreeform: items.filter((item) => item.type === KNOWLEDGE_TYPE_FREEFORM),
+    };
   } catch (error) {
-    console.error("Failed to fetch learned Q&A:", error);
-    return [];
+    console.error("Failed to fetch learned knowledge:", error);
+
+    return {
+      learnedQna: [],
+      learnedFreeform: [],
+    };
   }
 }
 
@@ -70,13 +90,14 @@ async function buildTicketContext({ message }) {
     message.id
   );
 
-  const learnedQna = await getLearnedQna(message.guild?.id);
+  const learnedKnowledge = await getLearnedKnowledge(message.guild?.id);
 
   return {
     guildName: message.guild?.name || null,
     channelName: message.channel?.name || null,
     recentMessages,
-    learnedQna,
+    learnedQna: learnedKnowledge.learnedQna,
+    learnedFreeform: learnedKnowledge.learnedFreeform,
   };
 }
 
