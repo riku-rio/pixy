@@ -125,6 +125,10 @@ function buildTicketPrompt({
       "- Do not add a fixed prefix unless it naturally belongs in the name.",
       "- Good examples: billing-issue, nitro-help, role-request, refund-question.",
       "- Bad examples: Ticket Billing, @admin-help, 🔥refund🔥, مشكلة-دفع.",
+      "- Never request rename_ticket if the requested name contains profanity, insults, hate, slurs, sexual content, harassment, or offensive wording.",
+      "- If the user asks for an offensive ticket name, refuse briefly and ask for a clean support-related name.",
+      "- Do not try to hide profanity using symbols, spacing, numbers, or misspellings.",
+      "- The ticket name must describe the issue, not insult a user, staff member, server, or group.",
 
       "escalate_ticket rules:",
       "- Request escalate_ticket only when human support is clearly needed.",

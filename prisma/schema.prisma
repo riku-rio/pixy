@@ -13,55 +13,56 @@ model GuildConfig {
   enabled          Boolean  @default(true)
   maxLearnedItems  Int      @default(20)
 
-  escalationCategoryId String?
-  maxAdminRoutes       Int      @default(10)
-
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  learnedAnswers   LearnedAnswer[]
-  ticketChannels   TicketChannel[]
-  adminRoutes      AdminRoute[]
-
-  aiEnabled Boolean @default(true)
-  aiProvider String @default("groq")
-  aiModel String?
-  aiSystemPrompt String?
-}
-
-model LearnedAnswer {
-  id        String   @id @default(cuid())
-  guildId   String
-
-  type      String   @default("qna") // qna | freeform
-
-  question  String?
-  answer    String?
-
-  title     String?
-  content   String?
+  escalationCategoryId            String?
+  escalationNotificationChannelId String?
+  maxAdminRoutes                  Int      @default(10)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  learnedAnswers LearnedAnswer[]
+  ticketChannels TicketChannel[]
+  adminRoutes    AdminRoute[]
+
+  aiEnabled       Boolean @default(true)
+  aiProvider      String  @default("groq")
+  aiModel         String?
+  aiSystemPrompt  String?
+}
+
+model LearnedAnswer {
+  id      String @id @default(cuid())
+  guildId String
+
+  type String @default("qna") // qna | freeform
+
+  question String?
+  answer   String?
+
+  title   String?
+  content String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guild GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@index([guildId])
   @@index([guildId, type])
 }
 
 model AdminRoute {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   guildId     String
   roleId      String
   description String
 
-  enabled     Boolean  @default(true)
+  enabled Boolean @default(true)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  guild       GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  guild GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@unique([guildId, roleId])
   @@index([guildId])
@@ -69,34 +70,36 @@ model AdminRoute {
 }
 
 model TicketChannel {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   guildId   String
-  channelId String   @unique
+  channelId String  @unique
   userId    String?
 
-  closed    Boolean  @default(false)
-  status    String   @default("open") // open | closed
+  closed Boolean @default(false)
+  status String  @default("open") // open | closed
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  aiEnabled Boolean @default(true)
-  lastAiReplyAt DateTime?
+  aiEnabled         Boolean   @default(true)
+  lastAiReplyAt     DateTime?
   lastUserMessageAt DateTime?
 
-  closedByAi Boolean @default(false)
-  closedAt DateTime?
+  closedByAi Boolean   @default(false)
+  closedAt   DateTime?
 
   renamedByAiAt DateTime?
-  lastAiAction String?
+  lastAiAction  String?
   lastAiActionAt DateTime?
 
-  escalated Boolean @default(false)
-  escalatedAt DateTime?
-  escalatedRoleId String?
+  escalated        Boolean   @default(false)
+  escalatedAt      DateTime?
+  escalatedRoleId  String?
   escalationReason String?
 
-  guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  escalationNotificationMessageId String?
+
+  guild GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@index([guildId])
   @@index([guildId, status])
@@ -106,19 +109,19 @@ model TicketChannel {
 model AiUsageLog {
   id String @id @default(cuid())
 
-  guildId String
+  guildId   String
   channelId String
-  userId String?
+  userId    String?
 
   provider String
-  model String?
+  model    String?
 
-  promptTokens Int?
+  promptTokens     Int?
   completionTokens Int?
-  totalTokens Int?
+  totalTokens      Int?
 
   status String
-  error String?
+  error  String?
 
   createdAt DateTime @default(now())
 }

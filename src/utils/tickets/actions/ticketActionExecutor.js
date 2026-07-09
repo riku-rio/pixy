@@ -2,6 +2,12 @@ const { prisma } = require("../../../config/prisma");
 const { aiConfig } = require("../../../config/ai");
 const { TICKET_ACTIONS } = require("./ticketActionTypes");
 
+const {
+  getOrCreateEscalationNotificationChannel,
+  sendEscalationNotification,
+  canMentionRoleInChannel,
+} = require("../escalationNotifications");
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -24,15 +30,16 @@ async function sendActionReply(message, text) {
   return true;
 }
 
-async function sendEscalationReply({ message, roleId, text }) {
+async function sendTicketEscalationReply({ message, roleName, text }) {
   const replyText =
     limitReplyText(text) ||
-    "This ticket has been escalated to the appropriate support team. Please wait for them to respond here.";
+    `This ticket has been escalated to ${roleName}. Please wait for them to respond here.`;
 
   await message.channel.send({
-    content: [`<@&${roleId}>`, "", replyText].join("\n"),
+    content: replyText,
     allowedMentions: {
-      roles: [roleId],
+      roles: [],
+      users: [],
       repliedUser: false,
     },
   });
@@ -45,7 +52,9 @@ async function executeRenameTicket({ message, validation }) {
 
   await message.channel.setName(
     name,
-    `Pixy AI safe action: rename_ticket requested by ${message.author?.tag || "user"}`
+    `Pixy AI safe action: rename_ticket requested by ${
+      message.author?.tag || "user"
+    }`
   );
 
   await prisma.ticketChannel.update({
@@ -67,7 +76,8 @@ async function executeRenameTicket({ message, validation }) {
 }
 
 async function executeEscalateTicket({ actionRequest, message, validation }) {
-  const { categoryId, roleId, reason, name } = validation.data;
+  const { categoryId, roleId, reason, name, routeId, roleName } =
+    validation.data;
 
   const auditReason = `Pixy AI safe action: escalate_ticket requested by ${
     message.author?.tag || "user"
@@ -84,6 +94,50 @@ async function executeEscalateTicket({ actionRequest, message, validation }) {
     await message.channel.setName(name, auditReason);
   }
 
+  const config = await prisma.guildConfig.findUnique({
+    where: {
+      guildId: message.guild.id,
+    },
+    select: {
+      escalationNotificationChannelId: true,
+    },
+  });
+
+  const notificationResult = await getOrCreateEscalationNotificationChannel({
+    guild: message.guild,
+    categoryId,
+    existingChannelId: config?.escalationNotificationChannelId,
+  });
+
+  if (!notificationResult.ok) {
+    throw new Error(notificationResult.code);
+  }
+
+  const role = await message.guild.roles.fetch(roleId).catch(() => null);
+
+  if (!role) {
+    throw new Error("escalation_role_missing");
+  }
+
+  const canMentionRole = await canMentionRoleInChannel(
+    notificationResult.channel,
+    role
+  );
+
+  if (!canMentionRole) {
+    throw new Error("missing_role_mention_permission_in_notification_channel");
+  }
+
+  const notificationMessage = await sendEscalationNotification({
+    notificationChannel: notificationResult.channel,
+    ticketChannel: message.channel,
+    role,
+    reason,
+    routeId,
+    requestedBy: message.author,
+    newName: name,
+  });
+
   await prisma.ticketChannel.update({
     where: {
       channelId: message.channel.id,
@@ -93,15 +147,16 @@ async function executeEscalateTicket({ actionRequest, message, validation }) {
       escalatedAt: new Date(),
       escalatedRoleId: roleId,
       escalationReason: reason || null,
+      escalationNotificationMessageId: notificationMessage.id,
       lastAiAction: TICKET_ACTIONS.ESCALATE_TICKET,
       lastAiActionAt: new Date(),
       lastAiReplyAt: new Date(),
     },
   });
 
-  const replySent = await sendEscalationReply({
+  const replySent = await sendTicketEscalationReply({
     message,
-    roleId,
+    roleName: roleName || role.name,
     text: actionRequest.text,
   });
 

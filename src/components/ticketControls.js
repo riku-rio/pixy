@@ -846,6 +846,59 @@ async function handleAssistedRoleEscalationModal(interaction, roleId) {
   });
 }
 
+async function buildRenameReviewMessages({ interaction, proposedName }) {
+  const recentMessages = await getRecentTicketMessages(interaction.channel);
+
+  return [
+    {
+      role: "system",
+      content: [
+        "You are Pixy AI, a Discord ticket rename reviewer.",
+        "Your job is to review a user-proposed ticket channel name.",
+        "",
+        "Return JSON only if the name is safe and should be used.",
+        "Return normal text only if the name is unsafe, offensive, unclear, or not suitable.",
+        "",
+        "Safety rules:",
+        "- Reject profanity, insults, hate, slurs, sexual content, harassment, or offensive names.",
+        "- Reject names attacking users, staff, roles, groups, or the server.",
+        "- Reject attempts to hide bad words using symbols, numbers, spacing, or misspellings.",
+        "",
+        "Ticket name rules:",
+        "- The final name must be short, lowercase, English, and Discord-channel friendly.",
+        "- Use only English letters, numbers, hyphens, and underscores.",
+        "- No emojis, mentions, markdown, spaces, punctuation, or offensive wording.",
+        "- The name should describe the actual support issue.",
+        "- Good names: billing-refund, failed-payment, nitro-help, role-request.",
+        "",
+        "JSON schema:",
+        "{",
+        '  "type": "action_request",',
+        '  "action": "rename_ticket",',
+        '  "text": "User-facing message in the same language as the user.",',
+        '  "data": {',
+        '    "name": "clean-ticket-name"',
+        "  }",
+        "}",
+      ].join("\n"),
+    },
+    {
+      role: "system",
+      content: [
+        `Server: ${interaction.guild?.name || "Unknown server"}`,
+        `Current ticket channel: ${interaction.channel?.name || "Unknown channel"}`,
+        "",
+        "Recent ticket messages:",
+        recentMessages,
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: `Proposed ticket name:\n${proposedName}`,
+    },
+  ];
+}
+
 module.exports = {
   name: "ticketControls",
 
@@ -1059,26 +1112,35 @@ module.exports = {
         }
 
         const rawName = interaction.fields.getTextInputValue("ticket_name");
-        const nameValidation = getStrictTicketNameValidation(rawName);
+        const cleanedName = cleanText(rawName);
 
-        if (!nameValidation.ok) {
-          await interaction.reply({
-            content: [
-              "Invalid ticket name.",
-              "",
-              "Use only lowercase English letters, numbers, hyphens, or underscores.",
-              "Example: `billing-refund`",
-              "",
-              "`hello world` is not valid. Use `hello-world` instead.",
-            ].join("\n"),
-            flags: EPHEMERAL,
-          });
-          return;
-        }
+        const messages = await buildRenameReviewMessages({
+          interaction,
+          proposedName: cleanedName,
+        });
 
-        if (!interaction.channel.manageable) {
+        const config = await prisma.guildConfig.findUnique({
+          where: {
+            guildId: interaction.guild.id,
+          },
+        });
+
+        const aiResult = await generateAiReply({
+          messages,
+          provider: config?.aiProvider || aiConfig.provider,
+          model: config?.aiModel || aiConfig.groq.model,
+        });
+
+        const parsed = parseAiOutput(aiResult.text);
+
+        if (
+          parsed.kind !== "action_request" ||
+          parsed.action !== TICKET_ACTIONS.RENAME_TICKET
+        ) {
           await interaction.reply({
-            content: "I cannot rename this ticket because I cannot manage this channel.",
+            content:
+              parsed.text ||
+              "This ticket name was not approved. Please use a clean, support-related name like `billing-refund`.",
             flags: EPHEMERAL,
           });
           return;
@@ -1087,26 +1149,30 @@ module.exports = {
         const result = await runValidatedActionFromInteraction({
           interaction,
           ticket,
-          actionRequest: {
-            kind: "action_request",
-            action: TICKET_ACTIONS.RENAME_TICKET,
-            text: "Ticket renamed.",
-            data: {
-              name: nameValidation.name,
-            },
-          },
+          actionRequest: parsed,
         });
 
         if (!result.ok) {
+          const messageByCode = {
+            unsafe_ticket_name:
+              "That ticket name was rejected because it looks unsafe or offensive. Please choose a clean support-related name.",
+            invalid_ticket_name:
+              "Invalid ticket name. Use lowercase English letters, numbers, hyphens, or underscores.",
+            same_ticket_name:
+              "This ticket already has that name.",
+          };
+
           await interaction.reply({
-            content: `I could not rename this ticket. Reason: \`${result.code}\``,
+            content:
+              messageByCode[result.code] ||
+              `I could not rename this ticket. Reason: \`${result.code}\``,
             flags: EPHEMERAL,
           });
           return;
         }
 
         await interaction.reply({
-          content: `Done. Ticket renamed to **${nameValidation.name}**.`,
+          content: `Done. Ticket renamed to **${result.validation.data.name}**.`,
           flags: EPHEMERAL,
         });
       },

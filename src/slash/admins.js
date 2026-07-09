@@ -16,6 +16,10 @@ const {
 const { prisma } = require("../config/prisma");
 const { aiConfig } = require("../config/ai");
 
+const {
+  getOrCreateEscalationNotificationChannel,
+} = require("../utils/tickets/escalationNotifications");
+
 const EPHEMERAL = 64;
 
 const AUTO_CATEGORY_NAMES = [
@@ -328,6 +332,25 @@ function buildRoleSelectPayload({ ownerUserId, category }) {
 async function handleCategoryConfigured({ interaction, ownerUserId, mode, category }) {
   await saveEscalationCategory(interaction.guild.id, category.id);
 
+  const notificationResult = await getOrCreateEscalationNotificationChannel({
+    guild: interaction.guild,
+    categoryId: category.id,
+    existingChannelId: null,
+  });
+
+  if (!notificationResult.ok) {
+    await interaction.update({
+      content: [
+        `Escalation category saved as **${category.name}**, but I could not create/find the notification channel.`,
+        `Reason: \`${notificationResult.code}\``,
+        "",
+        "Fix my permissions, then run `/admins action:category` again.",
+      ].join("\n"),
+      components: [],
+    });
+    return;
+  }
+
   if (mode === "add") {
     await interaction.update(
       buildRoleSelectPayload({
@@ -339,7 +362,10 @@ async function handleCategoryConfigured({ interaction, ownerUserId, mode, catego
   }
 
   await interaction.update({
-    content: `Done. Escalation category has been saved as **${category.name}**.`,
+    content: [
+      `Done. Escalation category has been saved as **${category.name}**.`,
+      `Notification channel: <#${notificationResult.channel.id}>`,
+    ].join("\n"),
     components: [],
   });
 }

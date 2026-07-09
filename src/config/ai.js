@@ -25,6 +25,18 @@ const aiConfig = {
   ),
 
   actionMaxReplyChars: Number(process.env.AI_ACTION_MAX_REPLY_CHARS || 1000),
+
+  renameReviewEnabled:
+    String(process.env.AI_RENAME_REVIEW_ENABLED || "true").toLowerCase() !== "false",
+
+  escalationNotificationChannelName:
+    process.env.AI_ESCALATION_NOTIFICATION_CHANNEL_NAME || "pixy-notifications",
+
+  renameBlockedWords:
+    String(process.env.AI_RENAME_BLOCKED_WORDS || "")
+      .split(",")
+      .map((word) => word.trim().toLowerCase())
+      .filter(Boolean),
 };
 
 module.exports = { aiConfig };

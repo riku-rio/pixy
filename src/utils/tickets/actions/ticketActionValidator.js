@@ -8,6 +8,10 @@ const {
   isAllowedTicketAction,
 } = require("./ticketActionTypes");
 
+const {
+  getUnsafeTicketNameReason,
+} = require("./renameSafety");
+
 function cleanSingleLine(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -26,6 +30,29 @@ function sanitizeTicketName(value) {
     .replace(/^[-_]+|[-_]+$/g, "");
 
   return text;
+}
+
+function getTicketUserPrefix(message, ticket) {
+  const rawName =
+    message.author?.username ||
+    message.member?.displayName ||
+    ticket?.userId ||
+    "user";
+
+  return sanitizeTicketName(rawName) || "user";
+}
+
+function buildUserPrefixedTicketName({ message, ticket, name }) {
+  const prefix = getTicketUserPrefix(message, ticket);
+  const cleanName = sanitizeTicketName(name);
+
+  if (!cleanName) return prefix;
+
+  if (cleanName === prefix || cleanName.startsWith(`${prefix}-`)) {
+    return cleanName;
+  }
+
+  return sanitizeTicketName(`${prefix}-${cleanName}`);
 }
 
 async function getBotMember(guild) {
@@ -233,12 +260,28 @@ async function validateEscalateTicket({ actionRequest, message, ticket }) {
     currentChannelName: message.channel.name,
   });
 
-  const sanitizedName = sanitizeTicketName(proposedName) || fallbackName;
+  const sanitizedName = buildUserPrefixedTicketName({
+    message,
+    ticket,
+    name: sanitizeTicketName(proposedName) || fallbackName,
+  });
 
   if (!sanitizedName || sanitizedName.length < 2) {
     return {
       ok: false,
       code: "invalid_ticket_name",
+    };
+  }
+
+  const unsafeReason = getUnsafeTicketNameReason(
+    `${proposedName || ""} ${sanitizedName || ""}`
+  );
+
+  if (unsafeReason) {
+    return {
+      ok: false,
+      code: "unsafe_ticket_name",
+      reason: unsafeReason,
     };
   }
 
@@ -321,7 +364,11 @@ async function validateTicketAction({ actionRequest, message, ticket }) {
 
   if (action === TICKET_ACTIONS.RENAME_TICKET) {
     const proposedName = getProposedTicketName(actionRequest.data);
-    const sanitizedName = sanitizeTicketName(proposedName);
+    const sanitizedName = buildUserPrefixedTicketName({
+      message,
+      ticket,
+      name: proposedName,
+    });
 
     if (!sanitizedName || sanitizedName.length < 2) {
       return {
@@ -351,6 +398,18 @@ async function validateTicketAction({ actionRequest, message, ticket }) {
       };
     }
 
+    const unsafeReason = getUnsafeTicketNameReason(
+      `${proposedName || ""} ${sanitizedName || ""}`
+    );
+
+    if (unsafeReason) {
+      return {
+        ok: false,
+        code: "unsafe_ticket_name",
+        reason: unsafeReason,
+      };
+    }
+
     return {
       ok: true,
       action,
@@ -377,4 +436,5 @@ async function validateTicketAction({ actionRequest, message, ticket }) {
 module.exports = {
   validateTicketAction,
   sanitizeTicketName,
+  buildUserPrefixedTicketName,
 };
