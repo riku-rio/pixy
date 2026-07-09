@@ -1,163 +1,136 @@
 # Pixy AI 🤖
 
-Pixy AI is an AI-powered Discord bot that automates ticket support by answering frequently asked questions inside ticket channels.
+Pixy AI is an AI-powered Discord ticket assistant built for modern support servers. It combines AI replies, server knowledge, safe AI actions, human escalation, and interactive ticket controls while keeping every action validated before execution.
 
-## Features
+> **Current Version:** `v0.4.2`
 
-### v0.1
+---
 
-* ✅ Slash command handler
-* ✅ Prefix command handler
-* ✅ Event handler
-* ✅ Automatic slash command registration
-* ✅ Prisma + SQLite setup
-* ✅ `/setup` command
-* ✅ Ticket category configuration per guild
-* ✅ Detect newly created ticket channels
-* ✅ Store guild configuration in the database
-* ✅ Store detected ticket channels
-* ✅ Send a welcome message when a new ticket is created
+# Features
 
-### v0.2
+## v0.1
+- Slash & Prefix commands
+- Event handler
+- Prisma + SQLite
+- `/setup`
+- Automatic ticket detection
+- Welcome messages
 
-* ✅ AI replies inside ticket channels
-* ✅ Groq AI provider integration
-* ✅ Basic AI capability guardrails
-* ✅ `/learn` command
-* ✅ Add custom Q&A items per server
-* ✅ Delete learned Q&A items by ID, question, answer, or selected match
-* ✅ List learned Q&A items with paginated ephemeral embeds
-* ✅ Clear all learned Q&A items with confirmation buttons
-* ✅ Store custom Q&A per server using Prisma
-* ✅ Context injection for learned Q&A inside AI ticket replies
-* ✅ Limit learned answers per server using `maxLearnedItems`
+## v0.2
+- AI ticket replies
+- Groq integration
+- `/learn`
+- Custom server knowledge (Q&A)
+- Knowledge management (list/delete/clear)
+- AI context injection
 
-### v0.3
+## v0.3
+- Add New Learn Items Form (Freeform)
+- AI Agent Actions
+- Safe Close Ticket
+- Safe Rename Ticket
+- Action validation
+- Security guardrails
+- Action logging
 
-* ✅ Expand learning into multiple knowledge types:
-  * Q&A knowledge
-  * Free-form knowledge
-* ✅ Add safe AI agent/action requests.
-* ✅ Allow AI to request limited ticket actions using structured JSON.
-* ✅ Validate every AI-requested action before execution.
-* ✅ Execute safe ticket actions only:
-  * Close ticket
-  * Rename ticket
-* ✅ Close ticket action deletes the current ticket channel after validation.
-* ✅ Rename ticket action uses the AI-suggested name after sanitizing it.
-* ✅ Invalid or malformed AI action JSON never executes an action.
-* ✅ Friendly fallback replies when AI action output cannot be processed.
-* ✅ Log AI usage, invalid action JSON, rejected actions, and executed actions.
-* ✅ Avoid dangerous actions by default:
-  * Ban
-  * Kick
-  * Delete arbitrary channels
-  * Manage roles
-  * Mention admins/staff
-  * Move ticket categories
-  * Change permissions
+## v0.4 / v0.4.2
+### Human Escalation
+- ✅ `/admins` command for configuring support routing
+- ✅ Multiple support/admin routes per server
+- ✅ Escalation Categories
+- ✅ Automatic Notification Channel
+- ✅ Escalation Notification System
+- ✅ AI chooses the best support role
+- ✅ Manual support role selection
+- ✅ Ticket move + rename during escalation
+- ✅ Safe role mentions only
+- ✅ Fully validated escalation flow
 
-## Commands
+### Ticket Controls
+- Interactive Select Menu
+- Rename Ticket
+- Close Ticket
+- Escalate Ticket
+- Let Pixy decide automatically
+- Or manually choose the destination support team
 
-### `/setup`
+### AI Rename Review
+- AI reviews requested ticket names
+- Rejects profanity and unsafe names
+- Discord-safe channel names
+- Blocked words support
+- Validation before rename
 
-Configure the ticket category where Pixy AI should detect newly created ticket channels.
+### Admin Routing
+- Configure support teams with `/admins`
+- Role descriptions help AI choose correctly
+- Route limits per server
+- Route management (Add/List/Delete/Clear)
 
-### `/learn`
+### Security & Hardening
+- Action validation
+- Safer AI outputs
+- Escalation validation
+- Rename validation
+- Notification validation
+- Additional hardening improvements
 
-Manage server-specific learned knowledge items.
+---
 
-Available actions:
+# Commands
 
-* `/learn action:add-qna` — Add a new learned Q&A item using a modal.
-* `/learn action:add-freeform` — Add free-form server knowledge using a modal.
-* `/learn action:delete` — Delete a learned item by ID, title, question, answer, content, or selected match.
-* `/learn action:list` — Show learned knowledge items in paginated ephemeral embeds.
-* `/learn action:clear` — Delete all learned knowledge items for the server after confirmation.
+## /setup
+Configure ticket category.
 
-## AI Agent Actions
+## /learn
+Manage server knowledge.
 
-Pixy AI can request a small set of safe ticket actions from inside ticket conversations.
+## /admins
+Configure human escalation.
 
-Allowed actions:
+Actions:
+- Add Route
+- List Routes
+- Delete Route
+- Clear Routes
+- Configure Escalation Category
 
-* `close_ticket`
-* `rename_ticket`
+---
 
-Pixy AI does not directly execute actions. It only returns a structured action request. The bot validates the request first, then executes it only if it is safe and allowed.
+# Tech Stack
 
-Unsupported actions are rejected and logged. Pixy AI must not perform or claim to perform dangerous actions such as banning users, kicking users, managing roles, changing permissions, mentioning staff, or moving tickets between categories.
+- Node.js
+- discord.js v14
+- Prisma ORM
+- SQLite
+- Groq AI
 
-## Tech Stack
+---
 
-* Node.js
-* discord.js v14
-* Prisma ORM
-* SQLite
-* Groq
+# Database
 
-## Project Structure
+The database now includes support for:
 
-```txt
-src/
-├── ai/
-│   └── providers/
-├── config/
-├── events/
-│   └── tickets/
-├── prefix/
-├── slash/
-└── utils/
-    └── tickets/
-        └── actions/
-```
+- Guild Configuration
+- Ticket Channels
+- Learned Knowledge
+- Admin Routes
+- Escalation Configuration
+- Escalation Notification Channel
+- AI Configuration
 
-## Setup
+(See `schema.prisma` for the complete schema.)
 
-Install dependencies
+---
 
-```bash
-npm install
-```
+# Environment Variables
 
-Generate Prisma Client
-
-```bash
-npx prisma generate
-```
-
-Run migrations
-
-```bash
-npx prisma migrate deploy
-```
-
-Start the bot
-
-```bash
-node .
-```
-
-## Development
-
-For local development with SQLite, you can run:
-
-```bash
-npx prisma migrate dev
-```
-
-Then start the bot:
-
-```bash
-node .
-```
-
-## Environment Variables
-
-Create a `.env` file.
+Some settings are temporary and are planned to become configurable from `/admins` or future Server Settings instead of `.env`.
 
 ```env
 # Bot
+
+# NODE_ENV=production
 NODE_ENV=development
 DISCORD_TOKEN=
 DISCORD_CLIENT_SECRET=
@@ -165,13 +138,16 @@ DISCORD_CLIENT_ID=
 PREFIX=^
 
 # Database
+
 DATABASE_URL="file:./dev.db"
 
 # Groq
+
 GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=llama-3.1-8b-instant
 
 # Provider
+
 AI_PROVIDER=groq
 AI_MAX_OUTPUT_TOKENS=500
 AI_TEMPERATURE=0.3
@@ -179,43 +155,51 @@ AI_REPLY_COOLDOWN_MS=3000
 AI_MAX_INPUT_CHARS=2500
 AI_RECENT_MESSAGES_LIMIT=8
 
-# Agent actions
+# Agent Actions
+
 AI_AGENT_ACTIONS_ENABLED=true
 AI_TICKET_CLOSE_DELETE_DELAY_MS=2500
 AI_ACTION_MAX_REPLY_CHARS=1000
+
+# Escalation
+
+AI_ESCALATION_ENABLED=true
+ADMIN_ROUTES_MAX_PER_GUILD=10
+
+# Block Words
+
+AI_RENAME_REVIEW_ENABLED=true
+AI_ESCALATION_NOTIFICATION_CHANNEL_NAME=pixy-notifications
+AI_RENAME_BLOCKED_WORDS=fuck,fucking,fuk,shit,bitch,nigga
 ```
-
-## Roadmap
-
-### v0.4 — Human Escalation & Admin Routing
-
-* Add `/admins` command.
-* Configure support/admin roles per server.
-* Configure escalation behavior without mentioning `Administrator` by default.
-* Allow Pixy AI to request human escalation only when needed.
-* Mention only configured support roles/users when escalation is enabled.
-* Add escalation rules, such as:
-  * User asks for staff/admin.
-  * AI cannot answer from available knowledge.
-  * Payment, refund, ban appeal, or sensitive account issue.
-  * User is angry, confused, or repeatedly unsatisfied.
-* Add optional escalation ticket category.
-* Add optional ticket move action for escalated tickets.
-* Add priority levels for tickets.
-* Log escalation requests and reasons.
-* Keep escalation actions safe and validated before execution.
-
-### Future
-
-* Embeddings
-* Vector Search
-* Paid Plans
-* Analytics
-* Multi-model support
-* Dashboard
-* External integrations
-* MCP support if the project needs many external tools later
 
 ---
 
-Made with ❤️ by Pixy team.
+# Roadmap
+
+## v0.5 — Payments & Server Configuration
+
+Planned work:
+
+- Payment System
+- Payment workflow
+- Trial system
+- Server Settings command
+- Move more `.env` options into per-server configuration
+- Better admin experience
+- More hardening
+- Additional AI improvements
+
+## v1.0 — Production Release
+
+- Complete end-to-end review
+- Full testing on a fresh Discord server
+- Fresh bot deployment testing
+- Final bug fixing
+- Production deployment
+- Documentation cleanup
+- Stable release
+
+---
+
+Made with ❤️ by Pixy Team.
