@@ -1,6 +1,10 @@
 const { Events, ChannelType } = require("discord.js");
 const { prisma } = require("../../config/prisma");
 
+const {
+  buildTicketControlPanelComponents,
+} = require("../../components/ticketControls");
+
 module.exports = {
   name: Events.ChannelCreate,
 
@@ -37,16 +41,22 @@ module.exports = {
           renamedByAiAt: null,
           lastAiAction: null,
           lastAiActionAt: null,
+          escalated: false,
+          escalatedAt: null,
+          escalatedRoleId: null,
+          escalationReason: null,
         },
       });
 
-      await channel.send(
-        [
+      await channel.send({
+        content: [
           "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket.",
           "",
-          "مرحبًا 👋 أنا Pixy AI. اكتب سؤالك هنا وسأحاول مساعدتك أثناء مراجعة فريق الدعم للتذكرة.",
-        ].join("\n")
-      );
+          "**Ticket Actions**",
+          "Use the menu below if you want to escalate, rename, or close this ticket.",
+        ].join("\n"),
+        components: buildTicketControlPanelComponents(),
+      });
     } catch (error) {
       console.error("ChannelCreate ticket handler failed:", error);
     }

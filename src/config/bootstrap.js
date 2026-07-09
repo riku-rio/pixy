@@ -187,6 +187,20 @@ async function bootstrap() {
       }
     }
 
+    const componentsPath = path.join(__dirname, "../components");
+
+    if (fs.existsSync(componentsPath)) {
+      const componentFiles = getAllJsFiles(componentsPath);
+
+      for (const file of componentFiles) {
+        const componentModule = require(file);
+
+        registerInteractionHandlers(client, componentModule);
+      }
+
+      console.log(`Loaded ${componentFiles.length} component module(s).`);
+    }
+
     const eventsPath = path.join(__dirname, "../events");
 
     if (fs.existsSync(eventsPath)) {
