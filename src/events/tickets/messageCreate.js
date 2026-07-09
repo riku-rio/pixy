@@ -33,6 +33,8 @@ const MESSAGES = {
       "تمام، هقفل التذكرة دلوقتي.",
     renameTicket:
       "تمام، حدّثت اسم التذكرة.",
+    escalateTicket:
+      "هصعّد التذكرة للفريق المختص عشان يراجعوا المشكلة معاك. من فضلك استنى ردهم هنا.",
   },
   en: {
     tooLong:
@@ -51,6 +53,8 @@ const MESSAGES = {
       "Okay, I'll close the ticket now.",
     renameTicket:
       "Done, I updated the ticket name.",
+    escalateTicket:
+      "I've escalated this ticket to the appropriate support team. Please wait for them to respond here.",
   },
 };
 
@@ -128,6 +132,10 @@ function getDefaultActionText({ action, lang }) {
 
   if (action === TICKET_ACTIONS.RENAME_TICKET) {
     return t(lang, "renameTicket");
+  }
+
+  if (action === TICKET_ACTIONS.ESCALATE_TICKET) {
+    return t(lang, "escalateTicket");
   }
 
   return t(lang, "actionFailed");
@@ -239,6 +247,7 @@ module.exports = {
         recentMessages: context.recentMessages,
         learnedQna: context.learnedQna,
         learnedFreeform: context.learnedFreeform,
+        adminRoutes: context.adminRoutes,
         customSystemPrompt: config.aiSystemPrompt,
       });
 
@@ -319,8 +328,9 @@ module.exports = {
             error: JSON.stringify({
               action: parsed.action,
               code: validation.code,
-            ids,
+              ids,
             }),
+            ids,
           });
 
           console.warn("AI ticket action rejected:", {

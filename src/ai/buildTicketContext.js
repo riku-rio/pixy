@@ -84,6 +84,62 @@ async function getLearnedKnowledge(guildId) {
   }
 }
 
+async function getAdminRoutes(guild) {
+  if (!guild?.id) return [];
+
+  try {
+    const config = await prisma.guildConfig.findUnique({
+      where: {
+        guildId: guild.id,
+      },
+      select: {
+        maxAdminRoutes: true,
+      },
+    });
+
+    const take = Math.max(
+      1,
+      Math.min(Number(config?.maxAdminRoutes || aiConfig.maxAdminRoutesPerGuild || 10), 25)
+    );
+
+    const routes = await prisma.adminRoute.findMany({
+      where: {
+        guildId: guild.id,
+        enabled: true,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take,
+      select: {
+        id: true,
+        roleId: true,
+        description: true,
+      },
+    });
+
+    await guild.roles.fetch().catch(() => null);
+
+    return routes
+      .map((route) => {
+        const role = guild.roles.cache.get(route.roleId);
+
+        if (!role || role.id === guild.id) return null;
+
+        return {
+          id: route.id,
+          roleId: route.roleId,
+          roleName: role.name,
+          description: route.description,
+        };
+      })
+      .filter(Boolean);
+  } catch (error) {
+    console.error("Failed to fetch admin routes:", error);
+    return [];
+  }
+}
+
 async function buildTicketContext({ message }) {
   const recentMessages = await getRecentChannelMessages(
     message.channel,
@@ -91,6 +147,7 @@ async function buildTicketContext({ message }) {
   );
 
   const learnedKnowledge = await getLearnedKnowledge(message.guild?.id);
+  const adminRoutes = await getAdminRoutes(message.guild);
 
   return {
     guildName: message.guild?.name || null,
@@ -98,6 +155,7 @@ async function buildTicketContext({ message }) {
     recentMessages,
     learnedQna: learnedKnowledge.learnedQna,
     learnedFreeform: learnedKnowledge.learnedFreeform,
+    adminRoutes,
   };
 }
 

@@ -1,8 +1,18 @@
 const { ChannelType, PermissionFlagsBits } = require("discord.js");
+
+const { prisma } = require("../../../config/prisma");
+const { aiConfig } = require("../../../config/ai");
+
 const {
   TICKET_ACTIONS,
   isAllowedTicketAction,
 } = require("./ticketActionTypes");
+
+function cleanSingleLine(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function sanitizeTicketName(value) {
   const text = String(value || "")
@@ -40,6 +50,211 @@ async function botCanManageChannel(channel) {
   const permissions = channel.permissionsFor(botMember);
 
   return Boolean(permissions?.has(PermissionFlagsBits.ManageChannels));
+}
+
+async function botCanMentionRole(channel, role) {
+  if (!channel?.guild || !role) return false;
+
+  if (role.mentionable) return true;
+
+  const botMember = await getBotMember(channel.guild);
+
+  if (!botMember) return false;
+
+  const permissions = channel.permissionsFor(botMember);
+
+  return Boolean(permissions?.has(PermissionFlagsBits.MentionEveryone));
+}
+
+async function getCategoryById(guild, categoryId) {
+  if (!guild || !categoryId) return null;
+
+  const cached = guild.channels.cache.get(categoryId);
+
+  if (cached?.type === ChannelType.GuildCategory) {
+    return cached;
+  }
+
+  try {
+    const fetched = await guild.channels.fetch(categoryId);
+    return fetched?.type === ChannelType.GuildCategory ? fetched : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getRoleById(guild, roleId) {
+  if (!guild || !roleId) return null;
+
+  const cached = guild.roles.cache.get(roleId);
+
+  if (cached) return cached;
+
+  try {
+    return await guild.roles.fetch(roleId);
+  } catch {
+    return null;
+  }
+}
+
+function getEscalationRoleId(data) {
+  return cleanSingleLine(
+    data?.roleId ||
+      data?.role_id ||
+      data?.supportRoleId ||
+      data?.support_role_id ||
+      data?.adminRoleId ||
+      data?.admin_role_id
+  );
+}
+
+function getProposedTicketName(data) {
+  return (
+    data?.name ||
+    data?.channelName ||
+    data?.newName ||
+    data?.new_name ||
+    data?.ticketName ||
+    data?.ticket_name
+  );
+}
+
+function buildFallbackEscalationName({ role, reason, currentChannelName }) {
+  const rolePart = sanitizeTicketName(role?.name || "");
+  const reasonPart = sanitizeTicketName(reason || "");
+  const currentPart = sanitizeTicketName(currentChannelName || "");
+
+  return (
+    sanitizeTicketName(`${rolePart}-${reasonPart}`) ||
+    sanitizeTicketName(`${rolePart}-ticket`) ||
+    sanitizeTicketName(`escalated-${currentPart}`) ||
+    "escalated-ticket"
+  );
+}
+
+async function validateEscalateTicket({ actionRequest, message, ticket }) {
+  if (!aiConfig.escalationEnabled) {
+    return {
+      ok: false,
+      code: "escalation_disabled",
+    };
+  }
+
+  if (ticket.escalated) {
+    return {
+      ok: false,
+      code: "ticket_already_escalated",
+    };
+  }
+
+  const config = await prisma.guildConfig.findUnique({
+    where: {
+      guildId: message.guild.id,
+    },
+    select: {
+      escalationCategoryId: true,
+    },
+  });
+
+  if (!config?.escalationCategoryId) {
+    return {
+      ok: false,
+      code: "missing_escalation_category",
+    };
+  }
+
+  const category = await getCategoryById(
+    message.guild,
+    config.escalationCategoryId
+  );
+
+  if (!category) {
+    return {
+      ok: false,
+      code: "invalid_escalation_category",
+    };
+  }
+
+  const roleId = getEscalationRoleId(actionRequest.data);
+
+  if (!roleId) {
+    return {
+      ok: false,
+      code: "missing_escalation_role",
+    };
+  }
+
+  const route = await prisma.adminRoute.findFirst({
+    where: {
+      guildId: message.guild.id,
+      roleId,
+      enabled: true,
+    },
+  });
+
+  if (!route) {
+    return {
+      ok: false,
+      code: "escalation_role_not_configured",
+    };
+  }
+
+  const role = await getRoleById(message.guild, roleId);
+
+  if (!role || role.id === message.guild.id) {
+    return {
+      ok: false,
+      code: "invalid_escalation_role",
+    };
+  }
+
+  const canMentionRole = await botCanMentionRole(message.channel, role);
+
+  if (!canMentionRole) {
+    return {
+      ok: false,
+      code: "missing_role_mention_permission",
+    };
+  }
+
+  if (message.channel.manageable === false) {
+    return {
+      ok: false,
+      code: "channel_not_manageable",
+    };
+  }
+
+  const reason = cleanSingleLine(actionRequest.data?.reason).slice(0, 500);
+
+  const proposedName = getProposedTicketName(actionRequest.data);
+  const fallbackName = buildFallbackEscalationName({
+    role,
+    reason,
+    currentChannelName: message.channel.name,
+  });
+
+  const sanitizedName = sanitizeTicketName(proposedName) || fallbackName;
+
+  if (!sanitizedName || sanitizedName.length < 2) {
+    return {
+      ok: false,
+      code: "invalid_ticket_name",
+    };
+  }
+
+  return {
+    ok: true,
+    action: TICKET_ACTIONS.ESCALATE_TICKET,
+    data: {
+      categoryId: category.id,
+      categoryName: category.name,
+      roleId: role.id,
+      roleName: role.name,
+      routeId: route.id,
+      reason,
+      name: sanitizedName,
+    },
+  };
 }
 
 async function validateTicketAction({ actionRequest, message, ticket }) {
@@ -105,12 +320,7 @@ async function validateTicketAction({ actionRequest, message, ticket }) {
   }
 
   if (action === TICKET_ACTIONS.RENAME_TICKET) {
-    const proposedName =
-      actionRequest.data?.name ||
-      actionRequest.data?.channelName ||
-      actionRequest.data?.newName ||
-      actionRequest.data?.new_name;
-
+    const proposedName = getProposedTicketName(actionRequest.data);
     const sanitizedName = sanitizeTicketName(proposedName);
 
     if (!sanitizedName || sanitizedName.length < 2) {
@@ -148,6 +358,14 @@ async function validateTicketAction({ actionRequest, message, ticket }) {
         name: sanitizedName,
       },
     };
+  }
+
+  if (action === TICKET_ACTIONS.ESCALATE_TICKET) {
+    return validateEscalateTicket({
+      actionRequest,
+      message,
+      ticket,
+    });
   }
 
   return {

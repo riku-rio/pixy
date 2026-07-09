@@ -15,6 +15,11 @@ const aiConfig = {
   agentActionsEnabled:
     String(process.env.AI_AGENT_ACTIONS_ENABLED || "true").toLowerCase() !== "false",
 
+  escalationEnabled:
+    String(process.env.AI_ESCALATION_ENABLED || "true").toLowerCase() !== "false",
+
+  maxAdminRoutesPerGuild: Number(process.env.ADMIN_ROUTES_MAX_PER_GUILD || 10),
+
   ticketCloseDeleteDelayMs: Number(
     process.env.AI_TICKET_CLOSE_DELETE_DELAY_MS || 2500
   ),

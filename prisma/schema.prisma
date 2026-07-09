@@ -13,11 +13,15 @@ model GuildConfig {
   enabled          Boolean  @default(true)
   maxLearnedItems  Int      @default(20)
 
+  escalationCategoryId String?
+  maxAdminRoutes       Int      @default(10)
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   learnedAnswers   LearnedAnswer[]
   ticketChannels   TicketChannel[]
+  adminRoutes      AdminRoute[]
 
   aiEnabled Boolean @default(true)
   aiProvider String @default("groq")
@@ -46,6 +50,24 @@ model LearnedAnswer {
   @@index([guildId, type])
 }
 
+model AdminRoute {
+  id          String   @id @default(cuid())
+  guildId     String
+  roleId      String
+  description String
+
+  enabled     Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  guild       GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, roleId])
+  @@index([guildId])
+  @@index([guildId, enabled])
+}
+
 model TicketChannel {
   id        String   @id @default(cuid())
   guildId   String
@@ -69,10 +91,16 @@ model TicketChannel {
   lastAiAction String?
   lastAiActionAt DateTime?
 
+  escalated Boolean @default(false)
+  escalatedAt DateTime?
+  escalatedRoleId String?
+  escalationReason String?
+
   guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
 
   @@index([guildId])
   @@index([guildId, status])
+  @@index([guildId, escalated])
 }
 
 model AiUsageLog {

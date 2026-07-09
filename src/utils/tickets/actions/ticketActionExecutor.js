@@ -24,6 +24,22 @@ async function sendActionReply(message, text) {
   return true;
 }
 
+async function sendEscalationReply({ message, roleId, text }) {
+  const replyText =
+    limitReplyText(text) ||
+    "This ticket has been escalated to the appropriate support team. Please wait for them to respond here.";
+
+  await message.channel.send({
+    content: [`<@&${roleId}>`, "", replyText].join("\n"),
+    allowedMentions: {
+      roles: [roleId],
+      repliedUser: false,
+    },
+  });
+
+  return true;
+}
+
 async function executeRenameTicket({ message, validation }) {
   const name = validation.data.name;
 
@@ -46,6 +62,52 @@ async function executeRenameTicket({ message, validation }) {
   return {
     ok: true,
     replySent: false,
+    channelDeleted: false,
+  };
+}
+
+async function executeEscalateTicket({ actionRequest, message, validation }) {
+  const { categoryId, roleId, reason, name } = validation.data;
+
+  const auditReason = `Pixy AI safe action: escalate_ticket requested by ${
+    message.author?.tag || "user"
+  }`.slice(0, 512);
+
+  if (message.channel.parentId !== categoryId) {
+    await message.channel.setParent(categoryId, {
+      lockPermissions: false,
+      reason: auditReason,
+    });
+  }
+
+  if (name && name !== message.channel.name) {
+    await message.channel.setName(name, auditReason);
+  }
+
+  await prisma.ticketChannel.update({
+    where: {
+      channelId: message.channel.id,
+    },
+    data: {
+      escalated: true,
+      escalatedAt: new Date(),
+      escalatedRoleId: roleId,
+      escalationReason: reason || null,
+      lastAiAction: TICKET_ACTIONS.ESCALATE_TICKET,
+      lastAiActionAt: new Date(),
+      lastAiReplyAt: new Date(),
+    },
+  });
+
+  const replySent = await sendEscalationReply({
+    message,
+    roleId,
+    text: actionRequest.text,
+  });
+
+  return {
+    ok: true,
+    replySent,
     channelDeleted: false,
   };
 }
@@ -123,6 +185,14 @@ async function executeTicketAction({ actionRequest, validation, message }) {
     return executeCloseTicket({
       actionRequest,
       message,
+    });
+  }
+
+  if (validation.action === TICKET_ACTIONS.ESCALATE_TICKET) {
+    return executeEscalateTicket({
+      actionRequest,
+      message,
+      validation,
     });
   }
 
