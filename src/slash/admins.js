@@ -127,7 +127,7 @@ async function assertOwnerAndAdmin(interaction, ownerUserId) {
 
   if (interaction.user.id !== ownerUserId) {
     await interaction.reply({
-      content: "Only the admin who used `/admins` can use this interaction.",
+      content: "Only the admin who used `/pixy-admins` can use this interaction.",
       flags: EPHEMERAL,
     });
     return false;
@@ -341,7 +341,7 @@ async function handleCategoryConfigured({ interaction, ownerUserId, mode, catego
         `Escalation category saved as **${category.name}**, but I could not create/find the notification channel.`,
         `Reason: \`${notificationResult.code}\``,
         "",
-        "Fix my permissions, then run `/admins action:category` again.",
+        "Fix my permissions, then run `/pixy-admins action:category` again.",
       ].join("\n"),
       components: [],
     });
@@ -1003,7 +1003,7 @@ module.exports = {
         if (result.status === "not_found") {
           await interaction.reply({
             content:
-              "No admin route matched that input. Use `/admins action:list` and try again with the route ID or role ID.",
+              "No admin route matched that input. Use `/pixy-admins action:list` and try again with the route ID or role ID.",
             flags: EPHEMERAL,
           });
           return;
@@ -1012,7 +1012,7 @@ module.exports = {
         if (result.status === "multiple") {
           await interaction.reply({
             content: [
-              "Multiple routes matched that input. Please run `/admins action:delete` again using one exact route ID or role ID.",
+              "Multiple routes matched that input. Please run `/pixy-admins action:delete` again using one exact route ID or role ID.",
               "",
               formatRouteMatches(interaction.guild, result.matches),
             ].join("\n"),

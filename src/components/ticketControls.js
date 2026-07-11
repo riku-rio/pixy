@@ -552,7 +552,7 @@ async function handleAiEscalationModal(interaction) {
   if (!routes.length) {
     await interaction.editReply({
       content:
-        "No support roles are configured yet. Ask an admin to add routes with `/admins action:add`.",
+        "No support roles are configured yet. Ask an admin to add routes with `/pixy-admins action:add`.",
     });
     return;
   }
@@ -757,7 +757,7 @@ async function handleAssistedRoleEscalationModal(interaction, roleId) {
   if (!route) {
     await interaction.editReply({
       content:
-        "This support role is no longer configured. Ask an admin to check `/admins action:list`.",
+        "This support role is no longer configured. Ask an admin to check `/pixy-admins action:list`.",
     });
     return;
   }
@@ -971,7 +971,7 @@ module.exports = {
         if (!route) {
           await interaction.reply({
             content:
-              "This support role is no longer configured. Ask an admin to check `/admins action:list`.",
+              "This support role is no longer configured. Ask an admin to check `/pixy-admins action:list`.",
             flags: EPHEMERAL,
           });
           return;
@@ -1075,7 +1075,7 @@ module.exports = {
         if (!routes.length) {
           await interaction.update({
             content:
-              "No support roles are configured yet. Ask an admin to add routes with `/admins action:add`.",
+              "No support roles are configured yet. Ask an admin to add routes with `/pixy-admins action:add`.",
             components: [],
           });
           return;
@@ -1207,3 +1207,4 @@ module.exports = {
     },
   ],
 };
+

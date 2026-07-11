@@ -85,7 +85,7 @@ async function assertOwnerAndAdmin(interaction, ownerUserId) {
 
   if (interaction.user.id !== ownerUserId) {
     await interaction.reply({
-      content: "Only the user who used `/learn` can use this interaction.",
+      content: "Only the user who used `/pixy-learn` can use this interaction.",
       flags: EPHEMERAL,
     });
     return false;
@@ -154,7 +154,7 @@ async function buildListPayload({ guildId, ownerUserId, page }) {
     embed.setDescription("No learned knowledge items have been added for this server yet.");
   } else {
     embed.setDescription(
-      "Items can be Q&A or free-form knowledge. Use `/learn action:delete` with the ID to remove any item."
+      "Items can be Q&A or free-form knowledge. Use `/pixy-learn action:delete` with the ID to remove any item."
     );
 
     items.forEach((item, index) => {
@@ -651,7 +651,7 @@ module.exports = {
         if (result.status === "not_found") {
           await interaction.reply({
             content:
-              "No learned knowledge item matched that input. Use `/learn action:list` and try deleting with the ID.",
+              "No learned knowledge item matched that input. Use `/pixy-learn action:list` and try deleting with the ID.",
             flags: EPHEMERAL,
           });
           return;
@@ -666,7 +666,7 @@ module.exports = {
               [
                 "Select the item you want to delete from the menu below.",
                 "",
-                "Tip: You can also use `/learn action:list` to see all learned items.",
+                "Tip: You can also use `/pixy-learn action:list` to see all learned items.",
               ].join("\n")
             );
 

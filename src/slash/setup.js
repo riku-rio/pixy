@@ -205,7 +205,7 @@ module.exports = {
 
         if (interaction.user.id !== ownerUserId) {
           await interaction.reply({
-            content: "Only the admin who used `/setup` can use this interaction.",
+            content: "Only the admin who used `/pixy-setup` can use this interaction.",
             flags: EPHEMERAL,
           });
           return;
@@ -243,7 +243,7 @@ module.exports = {
 
         if (interaction.user.id !== ownerUserId) {
           await interaction.reply({
-            content: "Only the admin who used `/setup` can use this interaction.",
+            content: "Only the admin who used `/pixy-setup` can use this interaction.",
             flags: EPHEMERAL,
           });
           return;
@@ -327,7 +327,7 @@ module.exports = {
 
         if (interaction.user.id !== ownerUserId) {
           await interaction.reply({
-            content: "Only the admin who used `/setup` can choose this category.",
+            content: "Only the admin who used `/pixy-setup` can choose this category.",
             flags: EPHEMERAL,
           });
           return;
@@ -376,3 +376,4 @@ module.exports = {
     },
   ],
 };
+

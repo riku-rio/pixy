@@ -1,4 +1,20 @@
 {
+  "name": "pixy",
+  "version": "0.4.3",
+  "private": true,
+  "description": "AI-powered Discord ticket assistant with guild-scoped knowledge and escalation routing.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "test": "node --test",
+    "test:guild-isolation": "node --test test/guild-isolation.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
