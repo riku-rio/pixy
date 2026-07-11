@@ -234,29 +234,26 @@ async function createOrFindAutoCategory(guild) {
     });
   }
 
-  for (const name of AUTO_CATEGORY_NAMES) {
-    const existing = findByName(name);
+  const existingCategory = AUTO_CATEGORY_NAMES
+    .map((name) => findByName(name))
+    .find(Boolean);
 
-    if (!existing) {
-      const category = await guild.channels.create({
-        name,
-        type: ChannelType.GuildCategory,
-        reason: "Pixy AI escalation category setup",
-      });
-
-      return {
-        category,
-        created: true,
-      };
-    }
+  if (existingCategory) {
+    return {
+      category: existingCategory,
+      created: false,
+    };
   }
 
+  const category = await guild.channels.create({
+    name: AUTO_CATEGORY_NAMES[0],
+    type: ChannelType.GuildCategory,
+    reason: "Pixy AI escalation category setup",
+  });
+
   return {
-    category:
-      findByName(AUTO_CATEGORY_NAMES[0]) ||
-      findByName(AUTO_CATEGORY_NAMES[1]) ||
-      findByName(AUTO_CATEGORY_NAMES[2]),
-    created: false,
+    category,
+    created: true,
   };
 }
 
