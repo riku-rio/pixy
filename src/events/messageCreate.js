@@ -206,12 +206,6 @@ module.exports = {
     if (message.author.bot) return;
     if (message.webhookId) return;
 
-    // Existing simple auto reply
-    if (message.content.toLowerCase() === "hello") {
-      await message.reply("Hey");
-      return;
-    }
-
     const prefixData = getPrefixData(message);
 
     if (!prefixData.matched) return;

@@ -3,6 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const { loadEnv } = require("./env");
 
+const SLASH_COMMAND_PREFIX = "pixy-";
+
 function getAllJsFiles(dirPath, arrayOfFiles = []) {
   const files = fs.readdirSync(dirPath);
 
@@ -25,6 +27,32 @@ function toArray(value) {
 
 function getCommandName(command) {
   return command?.data?.name || command?.name || "unknown";
+}
+
+function getProductionSlashCommandName(command) {
+  const currentName = String(getCommandName(command) || "").toLowerCase();
+
+  if (!currentName || currentName === "unknown") {
+    return currentName;
+  }
+
+  return currentName.startsWith(SLASH_COMMAND_PREFIX)
+    ? currentName
+    : `${SLASH_COMMAND_PREFIX}${currentName}`;
+}
+
+function applyProductionSlashCommandName(command) {
+  const commandName = getProductionSlashCommandName(command);
+
+  if (!commandName) return commandName;
+
+  if (typeof command.data?.setName === "function") {
+    command.data.setName(commandName);
+  } else if (command.data && typeof command.data === "object") {
+    command.data.name = commandName;
+  }
+
+  return commandName;
 }
 
 function attachSource(handler, commandName) {
@@ -178,7 +206,7 @@ async function bootstrap() {
           continue;
         }
 
-        const commandName = getCommandName(command);
+        const commandName = applyProductionSlashCommandName(command);
 
         commands.push(command);
         client.commands.set(commandName, command);
