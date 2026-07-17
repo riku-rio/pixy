@@ -496,6 +496,8 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
 
+        await interaction.deferUpdate();
+
         const respond = createResponder(interaction);
         const page = interaction.values?.[0];
         const guildId = interaction.guild.id;
@@ -564,6 +566,8 @@ module.exports = {
         const userId = interaction.customId.slice(TOGGLE_PREFIX.length);
 
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+
+        await interaction.deferUpdate();
 
         const respond = createResponder(interaction);
         const setting = interaction.values?.[0];
@@ -637,6 +641,7 @@ module.exports = {
         }
 
         if (action === "remove") {
+          await interaction.deferUpdate();
           const stats = await getBadWordsStats(guildId);
 
           if (stats.customWords.length === 0) {
@@ -691,6 +696,8 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
 
+        await interaction.deferUpdate();
+
         const respond = createResponder(interaction);
         const word = interaction.values?.[0];
         const guildId = interaction.guild.id;
@@ -738,6 +745,8 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
 
+        await interaction.deferUpdate();
+
         const respond = createResponder(interaction);
         const embed = await buildHomePage(interaction.guild.id);
         const selectMenu = buildHomeSelectMenu(userId);
@@ -758,6 +767,8 @@ module.exports = {
         const [userId, page] = rest.split(":");
 
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+
+        await interaction.deferUpdate();
 
         const respond = createResponder(interaction);
         const guildId = interaction.guild.id;
