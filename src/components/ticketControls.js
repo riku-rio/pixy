@@ -69,6 +69,16 @@ function parseScopedCustomId(customId, prefix) {
   };
 }
 
+// Helper to respond to deferred interactions safely
+function createResponder(interaction) {
+  return (payload) => {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(payload);
+    }
+    return interaction.update(payload);
+  };
+}
+
 function createPseudoMessage(interaction) {
   return {
     guild: interaction.guild,
@@ -994,17 +1004,23 @@ module.exports = {
 
         if (!(await assertScopedInteraction(interaction, userId, channelId))) return;
 
+        // Defer before async work
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate();
+        }
+
+        const respond = createResponder(interaction);
         const ticket = await getOpenTicket(interaction);
 
         if (!ticket) {
-          await interaction.update({
+          await respond({
             content: "This ticket is no longer open or is not tracked by Pixy AI.",
             components: [],
           });
           return;
         }
 
-        await interaction.update({
+        await respond({
           content: "Closing this ticket...",
           components: [],
         });
@@ -1039,7 +1055,8 @@ module.exports = {
 
         if (!(await assertScopedInteraction(interaction, userId, channelId))) return;
 
-        await interaction.update({
+        const respond = createResponder(interaction);
+        await respond({
           content: "Cancelled. This ticket was not closed.",
           components: [],
         });
@@ -1070,10 +1087,16 @@ module.exports = {
 
         if (!(await assertScopedInteraction(interaction, userId, channelId))) return;
 
+        // Defer before async work
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate();
+        }
+
+        const respond = createResponder(interaction);
         const routes = await getConfiguredAdminRoutes(interaction.guild);
 
         if (!routes.length) {
-          await interaction.update({
+          await respond({
             content:
               "No support roles are configured yet. Ask an admin to add routes with `/pixy-admins action:add`.",
             components: [],
@@ -1081,7 +1104,7 @@ module.exports = {
           return;
         }
 
-        await interaction.update({
+        await respond({
           content: "Choose the support role that best matches this ticket:",
           components: buildConfiguredRoleSelectComponents(interaction, routes),
         });

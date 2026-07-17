@@ -43,6 +43,16 @@ function cleanText(value) {
     .trim();
 }
 
+// Helper to respond to deferred interactions safely
+function createResponder(interaction) {
+  return (payload) => {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(payload);
+    }
+    return interaction.update(payload);
+  };
+}
+
 function truncateText(value, maxLength = 220) {
   const text = cleanText(value);
 
@@ -327,6 +337,11 @@ function buildRoleSelectPayload({ ownerUserId, category }) {
 }
 
 async function handleCategoryConfigured({ interaction, ownerUserId, mode, category }) {
+  // Defer before async work
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate();
+  }
+
   await saveEscalationCategory(interaction.guild.id, category.id);
 
   const notificationResult = await getOrCreateEscalationNotificationChannel({
@@ -335,8 +350,10 @@ async function handleCategoryConfigured({ interaction, ownerUserId, mode, catego
     existingChannelId: null,
   });
 
+  const respond = createResponder(interaction);
+
   if (!notificationResult.ok) {
-    await interaction.update({
+    await respond({
       content: [
         `Escalation category saved as **${category.name}**, but I could not create/find the notification channel.`,
         `Reason: \`${notificationResult.code}\``,
@@ -349,7 +366,7 @@ async function handleCategoryConfigured({ interaction, ownerUserId, mode, catego
   }
 
   if (mode === "add") {
-    await interaction.update(
+    await respond(
       buildRoleSelectPayload({
         ownerUserId,
         category,
@@ -358,7 +375,7 @@ async function handleCategoryConfigured({ interaction, ownerUserId, mode, catego
     return;
   }
 
-  await interaction.update({
+  await respond({
     content: [
       `Done. Escalation category has been saved as **${category.name}**.`,
       `Notification channel: <#${notificationResult.channel.id}>`,
@@ -698,7 +715,8 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
-        await interaction.update(
+        const respond = createResponder(interaction);
+        await respond(
           buildCategorySelectPayload({
             ownerUserId,
             mode,
@@ -717,12 +735,19 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
+        // Defer before async work
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate();
+        }
+
+        const respond = createResponder(interaction);
+
         const canManageChannels = await botCanManageGuildChannels(
           interaction.guild
         );
 
         if (!canManageChannels) {
-          await interaction.update({
+          await respond({
             content:
               "I need **Manage Channels** permission to create the escalation category automatically.",
             components: [],
@@ -733,7 +758,7 @@ module.exports = {
         const result = await createOrFindAutoCategory(interaction.guild);
 
         if (!result.category) {
-          await interaction.update({
+          await respond({
             content:
               "I could not create or find an escalation category. Please choose an existing category instead.",
             components: [],
@@ -757,13 +782,15 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
+        const respond = createResponder(interaction);
+
         const result = await prisma.adminRoute.deleteMany({
           where: {
             guildId: interaction.guild.id,
           },
         });
 
-        await interaction.update({
+        await respond({
           content: `Done. Deleted **${result.count}** admin/support route(s).`,
           components: [],
           embeds: [],
@@ -778,7 +805,9 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
-        await interaction.update({
+        const respond = createResponder(interaction);
+
+        await respond({
           content: "Cancelled. No admin/support routes were deleted.",
           components: [],
           embeds: [],
@@ -800,11 +829,12 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
+        const respond = createResponder(interaction);
         const categoryId = interaction.values?.[0];
         const category = await getCategoryById(interaction.guild, categoryId);
 
         if (!category) {
-          await interaction.update({
+          await respond({
             content: "Invalid category selected.",
             components: [],
           });
@@ -828,13 +858,14 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
+        const respond = createResponder(interaction);
         const roleId = interaction.values?.[0];
         const role = await getRoleById(interaction.guild, roleId);
 
         if (!role || role.id === interaction.guild.id) {
-          await interaction.reply({
+          await respond({
             content: "Please select a valid server role. `@everyone` cannot be used.",
-            flags: EPHEMERAL,
+            components: [],
           });
           return;
         }
@@ -858,9 +889,9 @@ module.exports = {
         });
 
         if (!existing && totalRoutes >= maxRoutes) {
-          await interaction.reply({
+          await respond({
             content: `This server already reached the admin route limit: **${maxRoutes}** route(s).`,
-            flags: EPHEMERAL,
+            components: [],
           });
           return;
         }

@@ -16,6 +16,16 @@ function hasAdminPermission(interaction) {
   return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 }
 
+// Helper to respond to deferred interactions safely
+function createResponder(interaction) {
+  return (payload) => {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(payload);
+    }
+    return interaction.update(payload);
+  };
+}
+
 async function assertOwnerAndAdmin(interaction, ownerUserId) {
   if (!interaction.guild) {
     await interaction.reply({
@@ -108,6 +118,12 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
+        // Defer before async work
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate();
+        }
+
+        const respond = createResponder(interaction);
         const guildId = interaction.guild.id;
 
         const [usageLogs, ticketChannels, learnedAnswers, adminRoutes, guildConfigs] =
@@ -126,7 +142,7 @@ module.exports = {
           adminRoutes.count +
           guildConfigs.count;
 
-        await interaction.update({
+        await respond({
           content: [
             "Done. All Pixy database data for this server has been deleted.",
             `Deleted records: **${totalDeleted}**`,
@@ -144,7 +160,9 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
-        await interaction.update({
+        const respond = createResponder(interaction);
+
+        await respond({
           content: "Cancelled. No Pixy data was deleted.",
           components: [],
         });

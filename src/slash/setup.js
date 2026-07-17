@@ -86,6 +86,16 @@ function parseOwnerUserId(customId, prefix) {
   return String(customId || "").slice(prefix.length);
 }
 
+// Helper to respond to deferred interactions safely
+function createResponder(interaction) {
+  return (payload) => {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(payload);
+    }
+    return interaction.update(payload);
+  };
+}
+
 function buildCategoryChoicePayload({ ownerUserId, currentCategory }) {
   const selectExistingButton = new ButtonBuilder()
     .setCustomId(`${SELECT_EXISTING_BUTTON_PREFIX}${ownerUserId}`)
@@ -219,7 +229,8 @@ module.exports = {
           return;
         }
 
-        await interaction.update(
+        const respond = createResponder(interaction);
+        await respond(
           buildCategorySelectPayload({ ownerUserId })
         );
       },
@@ -257,12 +268,14 @@ module.exports = {
           return;
         }
 
+        const respond = createResponder(interaction);
+
         const canManageChannels = await botCanManageGuildChannels(
           interaction.guild
         );
 
         if (!canManageChannels) {
-          await interaction.update({
+          await respond({
             content:
               "I need **Manage Channels** permission to create the ticket category automatically.",
             components: [],
@@ -273,7 +286,7 @@ module.exports = {
         const result = await createOrFindAutoCategory(interaction.guild);
 
         if (!result.category) {
-          await interaction.update({
+          await respond({
             content:
               "I could not create or find a ticket category. Please choose an existing category instead.",
             components: [],
@@ -299,7 +312,7 @@ module.exports = {
 
         const verb = result.created ? "created and saved" : "saved";
 
-        await interaction.update({
+        await respond({
           content: `Done. Ticket category has been ${verb} as **${result.category.name}**.`,
           components: [],
         });
@@ -341,11 +354,12 @@ module.exports = {
           return;
         }
 
+        const respond = createResponder(interaction);
         const categoryId = interaction.values[0];
         const category = interaction.guild.channels.cache.get(categoryId);
 
         if (!category || category.type !== ChannelType.GuildCategory) {
-          await interaction.update({
+          await respond({
             content: "Invalid category selected.",
             components: [],
           });
@@ -368,7 +382,7 @@ module.exports = {
           },
         });
 
-        await interaction.update({
+        await respond({
           content: `Done. Pixy AI ticket category has been saved as **${category.name}**.`,
           components: [],
         });

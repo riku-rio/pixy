@@ -50,6 +50,16 @@ function shortId(id) {
   return String(id || "").slice(0, 8);
 }
 
+// Helper to respond to deferred interactions safely
+function createResponder(interaction) {
+  return (payload) => {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(payload);
+    }
+    return interaction.update(payload);
+  };
+}
+
 function hasAdminPermission(interaction) {
   return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 }
@@ -738,7 +748,8 @@ module.exports = {
           page: Number(pageRaw) || 0,
         });
 
-        await interaction.update(payload);
+        const respond = createResponder(interaction);
+        await respond(payload);
       },
     },
     {
@@ -789,6 +800,11 @@ module.exports = {
 
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
 
+        // Defer before async work
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate();
+        }
+
         const itemId = interaction.values?.[0];
 
         const item = await prisma.learnedAnswer.findFirst({
@@ -798,8 +814,10 @@ module.exports = {
           },
         });
 
+        const respond = createResponder(interaction);
+
         if (!item) {
-          await interaction.update({
+          await respond({
             content: "This learned knowledge item no longer exists.",
             embeds: [],
             components: [],
@@ -813,7 +831,7 @@ module.exports = {
           },
         });
 
-        await interaction.update({
+        await respond({
           content: [
             "Done. The learned knowledge item has been deleted.",
             `Type: **${formatKnowledgeType(item.type)}**`,
