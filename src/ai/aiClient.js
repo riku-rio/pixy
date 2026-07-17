@@ -1,14 +1,34 @@
-const { aiConfig } = require("../config/ai");
+const { aiConfig, getGuildAiConfig } = require("../config/ai");
+const { getCurrentGuildId } = require("../context/guildContext");
 const { generateGroqReply } = require("./providers/groqProvider");
 
-async function generateAiReply({ messages, provider, model, apiKey }) {
-  const selectedProvider = provider || aiConfig.provider;
+async function generateAiReply({
+  messages,
+  provider,
+  model,
+  apiKey,
+  guildId,
+} = {}) {
+  const resolvedGuildId = guildId || getCurrentGuildId();
+  let selectedProvider = provider || aiConfig.provider;
+  let selectedModel = model || aiConfig.groq.model;
+  let selectedApiKey = apiKey || null;
+
+  if (resolvedGuildId && !selectedApiKey) {
+    const guildConfig = await getGuildAiConfig(resolvedGuildId, {
+      requireApiKey: true,
+    });
+
+    selectedProvider = guildConfig.provider;
+    selectedModel = guildConfig.groq.model;
+    selectedApiKey = guildConfig.groq.apiKey;
+  }
 
   if (selectedProvider === "groq") {
     return generateGroqReply({
       messages,
-      model,
-      apiKey,
+      model: selectedModel,
+      apiKey: selectedApiKey,
     });
   }
 
