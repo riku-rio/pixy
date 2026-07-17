@@ -3,24 +3,25 @@ const { aiConfig } = require("../../config/ai");
 
 const Groq = GroqSDK.default || GroqSDK;
 
-let client;
+const clients = new Map();
 
-function getGroqClient() {
-  if (!aiConfig.groq.apiKey) {
-    throw new Error("Missing GROQ_API_KEY in environment variables.");
+function getGroqClient(apiKey) {
+  const effectiveKey = apiKey || aiConfig.groq.apiKey;
+
+  if (!effectiveKey) {
+    throw new Error("Missing GROQ_API_KEY in environment variables or guild settings.");
   }
 
-  if (!client) {
-    client = new Groq({
-      apiKey: aiConfig.groq.apiKey,
-    });
+  // Use cached client for same API key
+  if (!clients.has(effectiveKey)) {
+    clients.set(effectiveKey, new Groq({ apiKey: effectiveKey }));
   }
 
-  return client;
+  return clients.get(effectiveKey);
 }
 
-async function generateGroqReply({ messages, model }) {
-  const groq = getGroqClient();
+async function generateGroqReply({ messages, model, apiKey }) {
+  const groq = getGroqClient(apiKey);
 
   const response = await groq.chat.completions.create({
     model: model || aiConfig.groq.model,

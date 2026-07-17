@@ -125,3 +125,29 @@ model AiUsageLog {
 
   createdAt DateTime @default(now())
 }
+
+model GuildSetting {
+  id      String @id @default(cuid())
+  guildId String @unique
+
+  // Features
+  aiReplyEnabled     Boolean @default(true)
+  closeTicketEnabled Boolean @default(true)
+  renameReviewEnabled Boolean @default(true)
+  escalationEnabled  Boolean @default(true)
+  agentActionsEnabled Boolean @default(true)
+
+  // AI-API
+  groqApiKey String? // Encrypted with PIXY_CREDENTIAL_ENCRYPTION_KEY
+  aiModel    String? // null = use default "openai/gpt-oss-120b"
+
+  // Bad Words
+  customBadWords String @default("[]") // JSON array, max 100 entries
+
+  // Plans
+  plan          String    @default("free")
+  planExpiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
