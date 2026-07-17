@@ -3,28 +3,23 @@ const { aiConfig } = require("../../config/ai");
 
 const Groq = GroqSDK.default || GroqSDK;
 
-const clients = new Map();
-
-function getGroqClient(apiKey) {
-  const effectiveKey = apiKey || aiConfig.groq.apiKey;
-
-  if (!effectiveKey) {
-    throw new Error("Missing GROQ_API_KEY in environment variables or guild settings.");
-  }
-
-  // Use cached client for same API key
-  if (!clients.has(effectiveKey)) {
-    clients.set(effectiveKey, new Groq({ apiKey: effectiveKey }));
-  }
-
-  return clients.get(effectiveKey);
-}
-
 async function generateGroqReply({ messages, model, apiKey }) {
-  const groq = getGroqClient(apiKey);
+  const key = String(apiKey || "").trim();
+  if (!key) {
+    const error = new Error(
+      "This server must configure a Groq API key in /pixy-settings."
+    );
+    error.code = "missing_guild_groq_api_key";
+    throw error;
+  }
+
+  // Construct per request so plaintext guild credentials are not retained in
+  // an unbounded process-wide cache.
+  const groq = new Groq({ apiKey: key });
+  const selectedModel = model || aiConfig.groq.model;
 
   const response = await groq.chat.completions.create({
-    model: model || aiConfig.groq.model,
+    model: selectedModel,
     messages,
     temperature: aiConfig.temperature,
     max_completion_tokens: aiConfig.maxOutputTokens,
@@ -36,7 +31,7 @@ async function generateGroqReply({ messages, model, apiKey }) {
     text: content || "",
     raw: response,
     usage: response.usage || null,
-    model: response.model || model || aiConfig.groq.model,
+    model: response.model || selectedModel,
   };
 }
 
