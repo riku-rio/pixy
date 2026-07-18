@@ -16,41 +16,25 @@ function hasAdminPermission(interaction) {
   return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 }
 
-// Helper to respond to deferred interactions safely
 function createResponder(interaction) {
-  return (payload) => {
-    if (interaction.deferred || interaction.replied) {
-      return interaction.editReply(payload);
-    }
-    return interaction.update(payload);
-  };
+  return (payload) => interaction.deferred || interaction.replied
+    ? interaction.editReply(payload)
+    : interaction.update(payload);
 }
 
 async function assertOwnerAndAdmin(interaction, ownerUserId) {
   if (!interaction.guild) {
-    await interaction.reply({
-      content: "This can only be used inside a server.",
-      flags: EPHEMERAL,
-    });
+    await interaction.reply({ content: "This can only be used inside a server.", flags: EPHEMERAL });
     return false;
   }
-
   if (interaction.user.id !== ownerUserId) {
-    await interaction.reply({
-      content: "Only the administrator who used `/pixy-clear` can confirm this action.",
-      flags: EPHEMERAL,
-    });
+    await interaction.reply({ content: "Only the administrator who used `/pixy-clear` can confirm this action.", flags: EPHEMERAL });
     return false;
   }
-
   if (!hasAdminPermission(interaction)) {
-    await interaction.reply({
-      content: "You need Administrator permission to use this action.",
-      flags: EPHEMERAL,
-    });
+    await interaction.reply({ content: "You need Administrator permission to use this action.", flags: EPHEMERAL });
     return false;
   }
-
   return true;
 }
 
@@ -59,50 +43,29 @@ module.exports = {
     .setName("clear")
     .setDescription("Delete all Pixy data stored for this server.")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
 
   async execute(interaction) {
-    if (!interaction.guild) {
-      await interaction.reply({
-        content: "This command can only be used inside a server.",
-        flags: EPHEMERAL,
-      });
+    if (!interaction.guild || !hasAdminPermission(interaction)) {
+      await interaction.reply({ content: "You need Administrator permission in a server to use this command.", flags: EPHEMERAL });
       return;
     }
 
-    if (!hasAdminPermission(interaction)) {
-      await interaction.reply({
-        content: "You need Administrator permission to use this command.",
-        flags: EPHEMERAL,
-      });
-      return;
-    }
-
-    const confirmButton = new ButtonBuilder()
-      .setCustomId(`${CONFIRM_PREFIX}${interaction.user.id}`)
-      .setLabel("Delete server data")
-      .setStyle(ButtonStyle.Danger);
-
-    const cancelButton = new ButtonBuilder()
-      .setCustomId(`${CANCEL_PREFIX}${interaction.user.id}`)
-      .setLabel("Cancel")
-      .setStyle(ButtonStyle.Secondary);
-
-    const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`${CONFIRM_PREFIX}${interaction.user.id}`).setLabel("Delete server data").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`${CANCEL_PREFIX}${interaction.user.id}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+    );
 
     await interaction.reply({
       content: [
-        "This will permanently delete all Pixy data stored for this server, including:",
-        "- Ticket and escalation categories",
-        "- Learned knowledge",
-        "- Ticket records",
-        "- Admin routes",
-        "- AI configuration and usage logs",
+        "This permanently deletes all Pixy data stored for this server, including:",
+        "- Ticket and escalation configuration",
+        "- Learned knowledge and ticket records",
+        "- Admin routes and AI usage logs",
+        "- Feature settings, model selection, and the encrypted Groq credential",
         "",
-        "Discord channels and roles themselves will not be deleted.",
-        "You will need to run `/pixy-setup` again afterward.",
+        "Discord channels and roles themselves are not deleted.",
       ].join("\n"),
       components: [row],
       flags: EPHEMERAL,
@@ -112,41 +75,30 @@ module.exports = {
   buttonHandlers: [
     {
       customIdPrefix: CONFIRM_PREFIX,
-
       async execute(interaction) {
         const ownerUserId = interaction.customId.slice(CONFIRM_PREFIX.length);
-
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
 
-        // Defer before async work
-        if (!interaction.deferred && !interaction.replied) {
-          await interaction.deferUpdate();
-        }
-
-        const respond = createResponder(interaction);
         const guildId = interaction.guild.id;
-
-        const [usageLogs, ticketChannels, learnedAnswers, adminRoutes, guildConfigs] =
+        const [usageLogs, ticketChannels, learnedAnswers, adminRoutes, guildSettings, guildConfigs] =
           await prisma.$transaction([
             prisma.aiUsageLog.deleteMany({ where: { guildId } }),
             prisma.ticketChannel.deleteMany({ where: { guildId } }),
             prisma.learnedAnswer.deleteMany({ where: { guildId } }),
             prisma.adminRoute.deleteMany({ where: { guildId } }),
+            prisma.guildSetting.deleteMany({ where: { guildId } }),
             prisma.guildConfig.deleteMany({ where: { guildId } }),
           ]);
 
-        const totalDeleted =
-          usageLogs.count +
-          ticketChannels.count +
-          learnedAnswers.count +
-          adminRoutes.count +
-          guildConfigs.count;
+        const totalDeleted = usageLogs.count + ticketChannels.count + learnedAnswers.count +
+          adminRoutes.count + guildSettings.count + guildConfigs.count;
 
-        await respond({
+        await interaction.editReply({
           content: [
             "Done. All Pixy database data for this server has been deleted.",
             `Deleted records: **${totalDeleted}**`,
-            "Run `/pixy-setup` to configure the server again.",
+            "The encrypted Groq credential was removed. Run `/pixy-setup` and `/pixy-settings` to configure the server again.",
           ].join("\n"),
           components: [],
         });
@@ -154,18 +106,10 @@ module.exports = {
     },
     {
       customIdPrefix: CANCEL_PREFIX,
-
       async execute(interaction) {
         const ownerUserId = interaction.customId.slice(CANCEL_PREFIX.length);
-
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
-
-        const respond = createResponder(interaction);
-
-        await respond({
-          content: "Cancelled. No Pixy data was deleted.",
-          components: [],
-        });
+        await createResponder(interaction)({ content: "Cancelled. No Pixy data was deleted.", components: [] });
       },
     },
   ],

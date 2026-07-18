@@ -1,220 +1,102 @@
 # Pixy AI 🤖
 
-Pixy AI is an AI-powered Discord ticket assistant built for modern support servers. It combines AI replies, server knowledge, safe AI actions, human escalation, and interactive ticket controls while keeping every action validated before execution.
+Pixy AI is an AI-powered Discord ticket assistant with guild-scoped knowledge, safe ticket actions, human escalation, and interactive server settings.
 
-> **Current Version:** `v0.4.3`
+## Current version
 
----
+`v0.5 development`
 
-# Features
+## Main features
 
-## v0.1
+- AI replies inside configured ticket channels
+- Per-server learned Q&A and free-form knowledge
+- Safe close, rename, and escalation actions
+- Configurable support routes and escalation notifications
+- `/pixy-settings` for guild-scoped feature controls
+- Per-guild Groq credentials encrypted at rest
+- Per-guild text/reasoning model selection
+- Guild-isolated usage logs and data reset
 
-* Slash & Prefix commands
-* Event handler
-* Prisma + SQLite
-* `/pixy-setup`
-* Automatic ticket detection
-* Welcome messages
+## Commands
 
-## v0.2
-
-* AI ticket replies
-* Groq integration
-* `/pixy-learn`
-* Custom server knowledge (Q&A)
-* Knowledge management (list/delete/clear)
-* AI context injection
-
-## v0.3
-
-* Add New Learn Items Form (Freeform)
-* AI Agent Actions
-* Safe Close Ticket
-* Safe Rename Ticket
-* Action validation
-* Security guardrails
-* Action logging
-
-## v0.4 / v0.4.3
-
-### Human Escalation
-
-* ✅ `/pixy-admins` command for configuring support routing
-* ✅ Multiple support/admin routes per server
-* ✅ Escalation Categories
-* ✅ Automatic Notification Channel
-* ✅ Escalation Notification System
-* ✅ AI chooses the best support role
-* ✅ Manual support role selection
-* ✅ Ticket move + rename during escalation
-* ✅ Safe role mentions only
-* ✅ Fully validated escalation flow
-
-### Ticket Controls
-
-* Interactive Select Menu
-* Rename Ticket
-* Close Ticket
-* Escalate Ticket
-* Let Pixy decide automatically
-* Or manually choose the destination support team
-
-### AI Rename Review
-
-* AI reviews requested ticket names
-* Rejects profanity and unsafe names
-* Discord-safe channel names
-* Blocked words support
-* Validation before rename
-
-### Admin Routing
-
-* Configure support teams with `/pixy-admins`
-* Role descriptions help AI choose correctly
-* Route limits per server
-* Route management (Add/List/Delete/Clear)
-
-### Server Data Reset
-
-* Delete all Pixy database data for the current server with `/pixy-clear`
-* Delete guild configuration, learned knowledge, admin routes, ticket records, and AI usage logs
-* Keep Discord channels and roles unchanged
-* Require Administrator permission and confirmation
-
-### Security & Hardening
-
-* Action validation
-* Safer AI outputs
-* Escalation validation
-* Rename validation
-* Notification validation
-* Additional hardening improvements
-
----
-
-# Commands
-
-## /pixy-setup
+### `/pixy-setup`
 
 Configure the ticket category for the current server.
 
-## /pixy-learn
+### `/pixy-learn`
 
-Manage server-specific learned knowledge.
+Add, list, delete, or clear server-specific learned knowledge.
 
-Actions:
+### `/pixy-admins`
 
-* Add Q&A
-* Add free-form knowledge
-* List items
-* Delete an item
-* Clear all items
+Configure escalation roles, routing descriptions, categories, and notifications.
 
-## /pixy-admins
+### `/pixy-settings`
 
-Configure human escalation and support routing.
+Administrators can configure:
 
-Actions:
+- AI reply, close, rename-review, escalation, and agent-action feature flags
+- A server-specific Groq API key
+- The Groq text/reasoning model used by the server
+- Custom blocked words
 
-* Add Route
-* List Routes
-* Delete Route
-* Clear Routes
-* Configure Escalation Category
+Groq API keys are entered through an ephemeral Discord modal, validated with Groq, encrypted with AES-256-GCM, and then stored in the database. Existing keys are never displayed or prefilled.
 
-## /pixy-clear
+The default model is `openai/gpt-oss-120b`. The model selector shows only models that are both approved by Pixy and currently available to the server's Groq key.
 
-Delete all Pixy database data stored for the current server.
+There is no global Groq API-key fallback. A server must configure its own key before AI features can run.
 
-This includes:
+### `/pixy-clear`
 
-* Guild configuration
-* Learned knowledge
-* Admin routes
-* Ticket records
-* AI usage logs
+Delete all Pixy database data for the current server, including its encrypted Groq credential and model selection. Discord channels and roles are not deleted.
 
-Discord channels and roles are not deleted. Administrator permission and confirmation are required.
+## Plans and usage
 
----
+Trials, payments, subscriptions, quotas, and plan-based model restrictions are not implemented yet. The Plans & Usage page is informational only.
 
-# Tech Stack
+## Tech stack
 
-* Node.js
-* discord.js v14
-* Prisma ORM
-* SQLite
-* Groq AI
+- Node.js 20+
+- discord.js 14
+- Prisma ORM
+- SQLite
+- Groq SDK
 
----
+## Development
 
-# Development
+Install dependencies:
 
-Install dependencies using the committed lockfile:
-
-```bash
+```powershell
 npm ci
 ```
 
 Generate the Prisma client:
 
-```bash
+```powershell
 npm run prisma:generate
 ```
 
-Apply committed database migrations:
+Apply committed migrations:
 
-```bash
+```powershell
 npm run prisma:migrate
 ```
 
-For local schema development:
+Run tests:
 
-```bash
-npm run prisma:migrate:dev
-```
-
-Run the test suite:
-
-```bash
+```powershell
 npm test
-```
-
-Run only the guild-isolation test:
-
-```bash
-npm run test:guild-isolation
 ```
 
 Start Pixy:
 
-```bash
+```powershell
 npm start
 ```
 
----
+## Environment variables
 
-# Database
-
-The database includes support for:
-
-* Guild Configuration
-* Ticket Channels
-* Learned Knowledge
-* Admin Routes
-* Escalation Configuration
-* Escalation Notification Channel
-* AI Configuration
-* AI Usage Logs
-
-See `prisma/schema.prisma` for the complete schema.
-
----
-
-# Environment Variables
-
-Some settings are temporary and are planned to become configurable through `/pixy-settings` instead of `.env`.
+Create `.env` from `.env.example`:
 
 ```env
 # Bot
@@ -230,68 +112,19 @@ PREFIX=^
 
 DATABASE_URL="file:./dev.db"
 
-# Groq
+# Credential Encryption
 
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=llama-3.1-8b-instant
-
-# Provider
-
-AI_PROVIDER=groq
-AI_MAX_OUTPUT_TOKENS=500
-AI_TEMPERATURE=0.3
-AI_REPLY_COOLDOWN_MS=3000
-AI_MAX_INPUT_CHARS=2500
-AI_RECENT_MESSAGES_LIMIT=8
-
-# Agent Actions
-
-AI_AGENT_ACTIONS_ENABLED=true
-AI_TICKET_CLOSE_DELETE_DELAY_MS=2500
-AI_ACTION_MAX_REPLY_CHARS=1000
-
-# Escalation
-
-AI_ESCALATION_ENABLED=true
-ADMIN_ROUTES_MAX_PER_GUILD=10
-
-# Rename Review and Blocked Words
-
-AI_RENAME_REVIEW_ENABLED=true
-AI_ESCALATION_NOTIFICATION_CHANNEL_NAME=pixy-notifications
-AI_RENAME_BLOCKED_WORDS=fuck,fucking,fuk,shit,bitch,nigga
+PIXY_CREDENTIAL_ENCRYPTION_KEY=
 ```
 
-Never commit real tokens, API keys, client secrets, or production credentials.
+`PIXY_CREDENTIAL_ENCRYPTION_KEY` must be a base64-encoded 32-byte random key. Generate one in PowerShell:
 
----
+```powershell
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes)
+```
 
-# Roadmap
+Keep the encryption key stable for the lifetime of the database. Changing or losing it makes previously stored guild credentials undecryptable.
 
-## v0.5 — Payments & Server Configuration
-
-Planned work:
-
-* Payment System
-* Payment workflow
-* Trial system
-* `/pixy-settings` command
-* Per-server configuration overrides
-* Move more `.env` options into per-server configuration
-* Better admin experience
-* More hardening
-* Additional AI improvements
-
-## v1.0 — Production Release
-
-* Complete end-to-end review
-* Full testing on a fresh Discord server
-* Fresh bot deployment testing
-* Final bug fixing
-* Production deployment
-* Documentation cleanup
-* Stable release
-
----
-
-Made with ❤️ by Pixy Team.
+Never commit Discord tokens, API keys, client secrets, production databases, or encryption keys.

@@ -2,21 +2,24 @@ const { Client, Collection, GatewayIntentBits, REST, Routes } = require("discord
 const fs = require("fs");
 const path = require("path");
 const { loadEnv } = require("./env");
+const { runWithGuildContext } = require("../context/guildContext");
+const {
+  validateCredentialEncryptionKey,
+} = require("../security/credentialEncryption");
 
 const SLASH_COMMAND_PREFIX = "pixy-";
 
 function getAllJsFiles(dirPath, arrayOfFiles = []) {
   const files = fs.readdirSync(dirPath);
 
-  files.forEach((file) => {
+  for (const file of files) {
     const fullPath = path.join(dirPath, file);
-
     if (fs.statSync(fullPath).isDirectory()) {
-      arrayOfFiles = getAllJsFiles(fullPath, arrayOfFiles);
+      getAllJsFiles(fullPath, arrayOfFiles);
     } else if (file.endsWith(".js")) {
       arrayOfFiles.push(fullPath);
     }
-  });
+  }
 
   return arrayOfFiles;
 }
@@ -31,11 +34,7 @@ function getCommandName(command) {
 
 function getProductionSlashCommandName(command) {
   const currentName = String(getCommandName(command) || "").toLowerCase();
-
-  if (!currentName || currentName === "unknown") {
-    return currentName;
-  }
-
+  if (!currentName || currentName === "unknown") return currentName;
   return currentName.startsWith(SLASH_COMMAND_PREFIX)
     ? currentName
     : `${SLASH_COMMAND_PREFIX}${currentName}`;
@@ -43,7 +42,6 @@ function getProductionSlashCommandName(command) {
 
 function applyProductionSlashCommandName(command) {
   const commandName = getProductionSlashCommandName(command);
-
   if (!commandName) return commandName;
 
   if (typeof command.data?.setName === "function") {
@@ -56,10 +54,7 @@ function applyProductionSlashCommandName(command) {
 }
 
 function attachSource(handler, commandName) {
-  return {
-    ...handler,
-    sourceCommand: commandName,
-  };
+  return { ...handler, sourceCommand: commandName };
 }
 
 function registerInteractionHandlers(client, command) {
@@ -68,23 +63,18 @@ function registerInteractionHandlers(client, command) {
   for (const handler of toArray(command.buttonHandlers)) {
     client.buttonHandlers.push(attachSource(handler, commandName));
   }
-
   for (const handler of toArray(command.buttons)) {
     client.buttonHandlers.push(attachSource(handler, commandName));
   }
-
   for (const handler of toArray(command.selectMenuHandlers)) {
     client.selectMenuHandlers.push(attachSource(handler, commandName));
   }
-
   for (const handler of toArray(command.selectMenus)) {
     client.selectMenuHandlers.push(attachSource(handler, commandName));
   }
-
   for (const handler of toArray(command.modalHandlers)) {
     client.modalHandlers.push(attachSource(handler, commandName));
   }
-
   for (const handler of toArray(command.modals)) {
     client.modalHandlers.push(attachSource(handler, commandName));
   }
@@ -101,29 +91,26 @@ function registerInteractionHandlers(client, command) {
     client.autocompleteHandlers.push(attachSource(handler, commandName));
   }
 
-  // Backward compatibility with your old componentHandlers system
   for (const handler of toArray(command.componentHandlers)) {
     const type = String(handler.type || "").toLowerCase();
-    const preparedHandler = attachSource(handler, commandName);
+    const prepared = attachSource(handler, commandName);
 
     if (type === "button" || type === "buttons") {
-      client.buttonHandlers.push(preparedHandler);
+      client.buttonHandlers.push(prepared);
     } else if (type === "modal" || type === "modals") {
-      client.modalHandlers.push(preparedHandler);
+      client.modalHandlers.push(prepared);
     } else if (type === "autocomplete") {
-      client.autocompleteHandlers.push(preparedHandler);
+      client.autocompleteHandlers.push(prepared);
     } else {
-      client.selectMenuHandlers.push(preparedHandler);
+      client.selectMenuHandlers.push(prepared);
     }
   }
 }
 
 function commandToJSON(command) {
-  if (typeof command.data?.toJSON === "function") {
-    return command.data.toJSON();
-  }
-
-  return command.data;
+  return typeof command.data?.toJSON === "function"
+    ? command.data.toJSON()
+    : command.data;
 }
 
 async function syncCommands({ token, clientId, guildId }, commands, prefixCount) {
@@ -133,18 +120,39 @@ async function syncCommands({ token, clientId, guildId }, commands, prefixCount)
   if (guildId) {
     await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body });
     console.log(`Synced ${body.length} guild slash command(s) to ${guildId}.`);
-    console.log(`Loaded ${prefixCount} prefix command(s).`);
-    return;
+  } else {
+    await rest.put(Routes.applicationCommands(clientId), { body });
+    console.log(`Synced ${body.length} global slash command(s).`);
   }
 
-  await rest.put(Routes.applicationCommands(clientId), { body });
-  console.log(`Synced ${body.length} global slash command(s).`);
   console.log(`Loaded ${prefixCount} prefix command(s).`);
+}
+
+function getGuildIdFromEventArgs(args) {
+  for (const value of args) {
+    const guildId = value?.guild?.id || value?.guildId || value?.message?.guild?.id;
+    if (guildId) return String(guildId);
+  }
+  return null;
+}
+
+function registerEvent(client, event) {
+  const listener = (...args) => {
+    const guildId = getGuildIdFromEventArgs(args);
+    return runWithGuildContext(guildId, () => event.execute(...args));
+  };
+
+  if (event.once || event.name === "ready") {
+    client.once(event.name, listener);
+  } else {
+    client.on(event.name, listener);
+  }
 }
 
 async function bootstrap() {
   try {
     const env = loadEnv();
+    validateCredentialEncryptionKey();
 
     const client = new Client({
       intents: [
@@ -155,27 +163,19 @@ async function bootstrap() {
     });
 
     client.appEnv = env;
-
     client.commands = new Collection();
-
     client.prefixCommands = new Collection();
     client.aliases = new Collection();
-
     client.buttonHandlers = [];
     client.selectMenuHandlers = [];
     client.modalHandlers = [];
     client.autocompleteHandlers = [];
-
     client.cooldowns = new Collection();
 
     const prefixPath = path.join(__dirname, "../prefix");
-
     if (fs.existsSync(prefixPath)) {
-      const prefixCommandFiles = getAllJsFiles(prefixPath);
-
-      for (const file of prefixCommandFiles) {
+      for (const file of getAllJsFiles(prefixPath)) {
         const command = require(file);
-
         if (!command?.name || typeof command.execute !== "function") {
           console.warn(`Skipped invalid prefix command: ${file}`);
           continue;
@@ -183,70 +183,47 @@ async function bootstrap() {
 
         const commandName = command.name.toLowerCase();
         client.prefixCommands.set(commandName, command);
-
-        if (Array.isArray(command.aliases)) {
-          for (const alias of command.aliases) {
-            client.aliases.set(String(alias).toLowerCase(), commandName);
-          }
+        for (const alias of toArray(command.aliases)) {
+          client.aliases.set(String(alias).toLowerCase(), commandName);
         }
       }
     }
 
-    const slashPath = path.join(__dirname, "../slash");
     const commands = [];
-
+    const slashPath = path.join(__dirname, "../slash");
     if (fs.existsSync(slashPath)) {
-      const slashCommandFiles = getAllJsFiles(slashPath);
-
-      for (const file of slashCommandFiles) {
+      for (const file of getAllJsFiles(slashPath)) {
         const command = require(file);
-
         if (!command?.data || typeof command.execute !== "function") {
           console.warn(`Skipped invalid slash command: ${file}`);
           continue;
         }
 
         const commandName = applyProductionSlashCommandName(command);
-
         commands.push(command);
         client.commands.set(commandName, command);
-
         registerInteractionHandlers(client, command);
       }
     }
 
     const componentsPath = path.join(__dirname, "../components");
-
     if (fs.existsSync(componentsPath)) {
       const componentFiles = getAllJsFiles(componentsPath);
-
       for (const file of componentFiles) {
-        const componentModule = require(file);
-
-        registerInteractionHandlers(client, componentModule);
+        registerInteractionHandlers(client, require(file));
       }
-
       console.log(`Loaded ${componentFiles.length} component module(s).`);
     }
 
     const eventsPath = path.join(__dirname, "../events");
-
     if (fs.existsSync(eventsPath)) {
-      const eventFiles = getAllJsFiles(eventsPath);
-
-      for (const file of eventFiles) {
+      for (const file of getAllJsFiles(eventsPath)) {
         const event = require(file);
-
         if (!event?.name || typeof event.execute !== "function") {
           console.warn(`Skipped invalid event: ${file}`);
           continue;
         }
-
-        if (event.once || event.name === "ready") {
-          client.once(event.name, (...args) => event.execute(...args));
-        } else {
-          client.on(event.name, (...args) => event.execute(...args));
-        }
+        registerEvent(client, event);
       }
     }
 
@@ -258,6 +235,4 @@ async function bootstrap() {
   }
 }
 
-module.exports = {
-  bootstrap,
-};
+module.exports = { bootstrap };

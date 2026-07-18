@@ -7,10 +7,26 @@ const {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require("discord.js");
 
 const { prisma } = require("../config/prisma");
-const { defaultAiConfig, getOrCreateGuildSetting } = require("../config/ai");
+const {
+  defaultAiConfig,
+  getGuildAiConfig,
+  getOrCreateGuildSetting,
+} = require("../config/ai");
+const {
+  DEFAULT_GROQ_MODEL,
+  isCuratedGroqModel,
+  listAvailableGroqModels,
+  validateGroqApiKey,
+} = require("../ai/groqModels");
+const {
+  encryptCredential,
+} = require("../security/credentialEncryption");
 const {
   getBadWordsStats,
   addCustomBadWord,
@@ -18,106 +34,88 @@ const {
 } = require("../utils/badWords");
 
 const EPHEMERAL = 64;
+const PREFIX = {
+  HOME: "settings_home:",
+  NAV: "settings_nav:",
+  TOGGLE: "settings_toggle:",
+  CLOSE: "settings_close:",
+  BADWORD_ACTION: "settings_badwords_action:",
+  BADWORD_REMOVE: "settings_badwords_remove:",
+  BADWORD_MODAL: "settings_badwords_modal:",
+  API_SET: "settings_api_set:",
+  API_MODAL: "settings_api_modal:",
+  API_REMOVE: "settings_api_remove:",
+  API_REMOVE_CONFIRM: "settings_api_remove_confirm:",
+  API_REMOVE_CANCEL: "settings_api_remove_cancel:",
+  MODEL_SELECT: "settings_model_select:",
+  MODEL_RESET: "settings_model_reset:",
+};
 
-// Custom ID prefixes
-const HOME_PREFIX = "settings_home:";
-const NAV_PREFIX = "settings_nav:";
-const TOGGLE_PREFIX = "settings_toggle:";
-const BADWORD_ADD_PREFIX = "settings_badwords_add:";
-const BADWORD_REMOVE_PREFIX = "settings_badwords_remove:";
-const CLOSE_PREFIX = "settings_close:";
-
-// Pages
-const PAGES = {
+const PAGES = Object.freeze({
   HOME: "home",
   FEATURES: "features",
   ESCALATION: "escalation",
   AIAPI: "aiapi",
   BADWORDS: "badwords",
   PLANS: "plans",
-};
+});
 
-// Helper functions
+const FEATURE_FIELDS = new Set([
+  "aiReplyEnabled",
+  "closeTicketEnabled",
+  "renameReviewEnabled",
+  "escalationEnabled",
+  "agentActionsEnabled",
+]);
+
 function cleanText(value) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function createResponder(interaction) {
-  return (payload) => {
-    if (interaction.deferred || interaction.replied) {
-      return interaction.editReply(payload);
-    }
-    return interaction.update(payload);
-  };
-}
-
-function buildScopedId(prefix, userId) {
+function scoped(prefix, userId) {
   return `${prefix}${userId}`;
+}
+
+function responder(interaction) {
+  return (payload) => interaction.deferred || interaction.replied
+    ? interaction.editReply(payload)
+    : interaction.update(payload);
 }
 
 async function assertOwnerAndAdmin(interaction, ownerUserId) {
   if (!interaction.guild) {
-    await interaction.reply({
-      content: "This can only be used inside a server.",
-      flags: EPHEMERAL,
-    });
+    await interaction.reply({ content: "This can only be used inside a server.", flags: EPHEMERAL });
     return false;
   }
-
   if (interaction.user.id !== ownerUserId) {
     await interaction.reply({
-      content: "Only the admin who used `/pixy-settings` can use this interaction.",
+      content: "Only the administrator who opened `/pixy-settings` can use this control.",
       flags: EPHEMERAL,
     });
     return false;
   }
-
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-    await interaction.reply({
-      content: "You need Administrator permission to use this.",
-      flags: EPHEMERAL,
-    });
+    await interaction.reply({ content: "You need Administrator permission to use this.", flags: EPHEMERAL });
     return false;
   }
-
   return true;
 }
 
-// Build navigation buttons
-function buildNavButtons(userId, page) {
-  const homeButton = new ButtonBuilder()
-    .setCustomId(`${HOME_PREFIX}${userId}`)
-    .setLabel("Home")
-    .setEmoji("🏠")
-    .setStyle(ButtonStyle.Secondary);
-
-  const backButton = new ButtonBuilder()
-    .setCustomId(`${NAV_PREFIX}${userId}:${PAGES.HOME}`)
-    .setLabel("Back")
-    .setEmoji("◀️")
-    .setStyle(ButtonStyle.Secondary);
-
-  const closeButton = new ButtonBuilder()
-    .setCustomId(`${CLOSE_PREFIX}${userId}`)
-    .setLabel("Close")
-    .setEmoji("✖️")
-    .setStyle(ButtonStyle.Secondary);
-
-  return [new ActionRowBuilder().addComponents(homeButton, backButton, closeButton)];
+function buildNavButtons(userId) {
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(scoped(PREFIX.HOME, userId)).setLabel("Home").setEmoji("🏠").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`${PREFIX.NAV}${userId}:${PAGES.HOME}`).setLabel("Back").setEmoji("◀️").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(scoped(PREFIX.CLOSE, userId)).setLabel("Close").setEmoji("✖️").setStyle(ButtonStyle.Secondary)
+  )];
 }
 
-// Build home page
 async function buildHomePage(guildId) {
   const setting = await getOrCreateGuildSetting(guildId);
   const badWordsStats = await getBadWordsStats(guildId);
 
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setTitle("🤖 Pixy Settings")
-    .setDescription(
-      "Configure Pixy AI for your server. Select a category below to manage settings."
-    )
+    .setDescription("Configure Pixy AI for your server. Select a category below.")
     .setColor(0x5865f2)
     .addFields(
       {
@@ -132,317 +130,212 @@ async function buildHomePage(guildId) {
         inline: true,
       },
       {
-        name: "🔑 AI-API",
+        name: "🔑 AI API",
         value: [
-          `API Key: ${setting.groqApiKey ? "✅ Configured" : "❌ Not Set"}`,
-          `Model: \`${setting.aiModel || defaultAiConfig.groq.model}\``,
+          `API Key: ${setting.groqApiKeyEncrypted ? "✅ Configured" : "❌ Required"}`,
+          `Model: \`${setting.aiModel || DEFAULT_GROQ_MODEL}\``,
         ].join("\n"),
         inline: true,
       },
       {
         name: "🚫 Bad Words",
-        value: [
-          `Built-in: ${badWordsStats.builtInCount} words`,
-          `Custom: ${badWordsStats.customCount}/${badWordsStats.maxCustom}`,
-        ].join("\n"),
+        value: `Built-in: ${badWordsStats.builtInCount}\nCustom: ${badWordsStats.customCount}/${badWordsStats.maxCustom}`,
         inline: true,
       },
       {
-        name: "📊 Plan",
-        value: `Current: **${setting.plan.charAt(0).toUpperCase() + setting.plan.slice(1)}**`,
+        name: "📊 Plans & Usage",
+        value: "Not implemented yet.",
         inline: true,
       }
-    )
-    .setFooter({ text: "Select a category from the menu below" });
-
-  return embed;
-}
-
-// Build home select menu
-function buildHomeSelectMenu(userId) {
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId(`${NAV_PREFIX}${userId}:home_select`)
-    .setPlaceholder("Select a settings category...")
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Features")
-        .setDescription("Toggle AI features on/off")
-        .setEmoji("📝")
-        .setValue(PAGES.FEATURES),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Escalation")
-        .setDescription("Configure escalation settings")
-        .setEmoji("🚨")
-        .setValue(PAGES.ESCALATION),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("AI-API")
-        .setDescription("Connect your Groq API key")
-        .setEmoji("🔑")
-        .setValue(PAGES.AIAPI),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Bad Words")
-        .setDescription("Manage custom bad words")
-        .setEmoji("🚫")
-        .setValue(PAGES.BADWORDS),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Plans & Usage")
-        .setDescription("View plan information")
-        .setEmoji("📊")
-        .setValue(PAGES.PLANS)
     );
-
-  return [new ActionRowBuilder().addComponents(selectMenu)];
 }
 
-// Build features page
+function buildHomeComponents(userId) {
+  return [new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`${PREFIX.NAV}${userId}:home_select`)
+      .setPlaceholder("Select a settings category...")
+      .addOptions(
+        new StringSelectMenuOptionBuilder().setLabel("Features").setDescription("Toggle AI features").setEmoji("📝").setValue(PAGES.FEATURES),
+        new StringSelectMenuOptionBuilder().setLabel("Escalation").setDescription("View escalation settings").setEmoji("🚨").setValue(PAGES.ESCALATION),
+        new StringSelectMenuOptionBuilder().setLabel("AI API").setDescription("Set the Groq key and model").setEmoji("🔑").setValue(PAGES.AIAPI),
+        new StringSelectMenuOptionBuilder().setLabel("Bad Words").setDescription("Manage custom blocked words").setEmoji("🚫").setValue(PAGES.BADWORDS),
+        new StringSelectMenuOptionBuilder().setLabel("Plans & Usage").setDescription("View current implementation status").setEmoji("📊").setValue(PAGES.PLANS)
+      )
+  )];
+}
+
 async function buildFeaturesPage(guildId) {
   const setting = await getOrCreateGuildSetting(guildId);
-
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setTitle("📝 Feature Settings")
-    .setDescription("Toggle AI features for your server.")
+    .setDescription("Toggle Pixy features for this server.")
     .setColor(0x5865f2)
     .addFields(
-      {
-        name: "AI Reply",
-        value: setting.aiReplyEnabled ? "✅ **Enabled**" : "❌ **Disabled**",
-        inline: true,
-      },
-      {
-        name: "Close Ticket",
-        value: setting.closeTicketEnabled ? "✅ **Enabled**" : "❌ **Disabled**",
-        inline: true,
-      },
-      {
-        name: "Rename Review",
-        value: setting.renameReviewEnabled ? "✅ **Enabled**" : "❌ **Disabled**",
-        inline: true,
-      },
-      {
-        name: "Escalation",
-        value: setting.escalationEnabled ? "✅ **Enabled**" : "❌ **Disabled**",
-        inline: true,
-      },
-      {
-        name: "Agent Actions",
-        value: setting.agentActionsEnabled ? "✅ **Enabled**" : "❌ **Disabled**",
-        inline: true,
-      }
-    )
-    .setFooter({ text: "Click a button below to toggle a feature" });
-
-  return embed;
-}
-
-// Build features select menu
-function buildFeaturesSelectMenu(userId) {
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId(`${TOGGLE_PREFIX}${userId}`)
-    .setPlaceholder("Select a feature to toggle...")
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Toggle AI Reply")
-        .setDescription("Enable/disable AI auto-replies")
-        .setValue("aiReplyEnabled"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Toggle Close Ticket")
-        .setDescription("Enable/disable AI ticket closing")
-        .setValue("closeTicketEnabled"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Toggle Rename Review")
-        .setDescription("Enable/disable AI rename review")
-        .setValue("renameReviewEnabled"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Toggle Escalation")
-        .setDescription("Enable/disable ticket escalation")
-        .setValue("escalationEnabled"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Toggle Agent Actions")
-        .setDescription("Enable/disable agent actions")
-        .setValue("agentActionsEnabled")
+      { name: "AI Reply", value: setting.aiReplyEnabled ? "✅ Enabled" : "❌ Disabled", inline: true },
+      { name: "Close Ticket", value: setting.closeTicketEnabled ? "✅ Enabled" : "❌ Disabled", inline: true },
+      { name: "Rename Review", value: setting.renameReviewEnabled ? "✅ Enabled" : "❌ Disabled", inline: true },
+      { name: "Escalation", value: setting.escalationEnabled ? "✅ Enabled" : "❌ Disabled", inline: true },
+      { name: "Agent Actions", value: setting.agentActionsEnabled ? "✅ Enabled" : "❌ Disabled", inline: true }
     );
-
-  return [new ActionRowBuilder().addComponents(selectMenu)];
 }
 
-// Build escalation page
+function buildFeatureComponents(userId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(scoped(PREFIX.TOGGLE, userId))
+        .setPlaceholder("Select a feature to toggle...")
+        .addOptions(
+          { label: "Toggle AI Reply", value: "aiReplyEnabled" },
+          { label: "Toggle Close Ticket", value: "closeTicketEnabled" },
+          { label: "Toggle Rename Review", value: "renameReviewEnabled" },
+          { label: "Toggle Escalation", value: "escalationEnabled" },
+          { label: "Toggle Agent Actions", value: "agentActionsEnabled" }
+        )
+    ),
+    ...buildNavButtons(userId),
+  ];
+}
+
 async function buildEscalationPage(guildId) {
-  const guildConfig = await prisma.guildConfig.findUnique({
-    where: { guildId },
-  });
-
-  const category = guildConfig?.escalationCategoryId
-    ? await prisma.guildConfig.findUnique({ where: { guildId } })
-    : null;
-
-  const embed = new EmbedBuilder()
+  const config = await prisma.guildConfig.findUnique({ where: { guildId } });
+  return new EmbedBuilder()
     .setTitle("🚨 Escalation Settings")
-    .setDescription("Configure how ticket escalation works.")
+    .setDescription("Use `/pixy-admins` to change escalation routes and channels.")
     .setColor(0xed4245)
     .addFields(
-      {
-        name: "Escalation Category",
-        value: guildConfig?.escalationCategoryId
-          ? `<#${guildConfig.escalationCategoryId}>`
-          : "❌ **Not configured**",
-        inline: true,
-      },
-      {
-        name: "Notification Channel",
-        value: guildConfig?.escalationNotificationChannelId
-          ? `<#${guildConfig.escalationNotificationChannelId}>`
-          : "❌ **Not configured**",
-        inline: true,
-      },
-      {
-        name: "Admin Routes",
-        value: `Max: **${guildConfig?.maxAdminRoutes || defaultAiConfig.maxAdminRoutesPerGuild}**`,
-        inline: true,
-      }
-    )
-    .setFooter({ text: "Use /pixy-admins to configure escalation routes" });
-
-  return embed;
+      { name: "Escalation Category", value: config?.escalationCategoryId ? `<#${config.escalationCategoryId}>` : "❌ Not configured", inline: true },
+      { name: "Notification Channel", value: config?.escalationNotificationChannelId ? `<#${config.escalationNotificationChannelId}>` : "❌ Not configured", inline: true },
+      { name: "Maximum Routes", value: String(config?.maxAdminRoutes || defaultAiConfig.maxAdminRoutesPerGuild), inline: true }
+    );
 }
 
-// Build AI-API page
-async function buildAiApiPage(guildId) {
-  const setting = await getOrCreateGuildSetting(guildId);
+function apiStatusLabel(status) {
+  if (status === "configured") return "✅ **Configured**";
+  if (status === "invalid") return "⚠️ **Invalid — replace required**";
+  return "❌ **Required**";
+}
 
+async function buildAiApiPage(guildId) {
+  const config = await getGuildAiConfig(guildId);
+  const isDefault = !config.setting.aiModel;
   const embed = new EmbedBuilder()
-    .setTitle("🔑 AI-API Settings")
-    .setDescription("Configure your Groq API key for AI features.")
+    .setTitle("🔑 AI API Settings")
+    .setDescription("Configure the Groq credential and text/reasoning model used by this server.")
     .setColor(0xfee75c)
     .addFields(
-      {
-        name: "API Key Status",
-        value: setting.groqApiKey
-          ? "✅ **Configured**"
-          : "❌ **Not Set** (using global default)",
-        inline: true,
-      },
-      {
-        name: "Current Model",
-        value: `\`${setting.aiModel || defaultAiConfig.groq.model}\``,
-        inline: true,
-      }
+      { name: "API Key Status", value: apiStatusLabel(config.credentialStatus), inline: true },
+      { name: "Current Model", value: `\`${config.groq.model}\``, inline: true },
+      { name: "Model Source", value: isDefault ? "Default fallback" : "Server override", inline: true }
     )
-    .setFooter({ text: "Your API key is encrypted and stored securely" });
+    .setFooter({ text: "The API key is encrypted with AES-256-GCM before storage." });
 
-  if (!setting.groqApiKey) {
+  if (config.credentialStatus !== "configured") {
     embed.addFields({
-      name: "⚠️ Note",
-      value:
-        "Without a guild API key, Pixy uses the global API key. To use your own, please provide it via a secure method (contact server owner).",
+      name: "⚠️ Setup required",
+      value: "AI features cannot run until an administrator adds a valid Groq API key below.",
     });
   }
-
   return embed;
 }
 
-// Build bad words page
+async function buildAiApiComponents(guildId, userId) {
+  const config = await getGuildAiConfig(guildId);
+  const components = [];
+
+  if (config.credentialStatus === "configured") {
+    try {
+      const models = await listAvailableGroqModels(config.groq.apiKey);
+      if (models.length) {
+        const menu = new StringSelectMenuBuilder()
+          .setCustomId(scoped(PREFIX.MODEL_SELECT, userId))
+          .setPlaceholder("Choose an available text/reasoning model...")
+          .addOptions(models.map((model) => ({
+            label: model.label,
+            description: model.description,
+            value: model.id,
+            default: config.groq.model === model.id,
+          })));
+        components.push(new ActionRowBuilder().addComponents(menu));
+      }
+    } catch {
+      // The embed still renders and the administrator can replace the key.
+    }
+  }
+
+  components.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(scoped(PREFIX.API_SET, userId)).setLabel(config.credentialStatus === "configured" ? "Replace API Key" : "Set API Key").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(scoped(PREFIX.API_REMOVE, userId)).setLabel("Remove API Key").setStyle(ButtonStyle.Danger).setDisabled(config.credentialStatus === "missing"),
+    new ButtonBuilder().setCustomId(scoped(PREFIX.MODEL_RESET, userId)).setLabel("Reset Model").setStyle(ButtonStyle.Secondary).setDisabled(!config.setting.aiModel)
+  ));
+  components.push(...buildNavButtons(userId));
+  return components;
+}
+
 async function buildBadWordsPage(guildId) {
   const stats = await getBadWordsStats(guildId);
-
   const embed = new EmbedBuilder()
     .setTitle("🚫 Bad Words Settings")
-    .setDescription("Manage the bad words filter for your server.")
+    .setDescription("Manage custom words in addition to Pixy's built-in list.")
     .setColor(0xeb459e)
     .addFields(
-      {
-        name: "Built-in Words",
-        value: `**${stats.builtInCount}** words`,
-        inline: true,
-      },
-      {
-        name: "Custom Words",
-        value: `**${stats.customCount}**/${stats.maxCustom}`,
-        inline: true,
-      },
-      {
-        name: "Remaining",
-        value: `**${stats.remaining}** slots available`,
-        inline: true,
-      }
-    )
-    .setFooter({ text: "Select an option below to add or remove custom words" });
-
-  if (stats.customWords.length > 0) {
-    const wordList = stats.customWords.slice(0, 10).join(", ");
-    const moreText = stats.customWords.length > 10 ? ` and ${stats.customWords.length - 10} more...` : "";
-    embed.addFields({
-      name: "Custom Words List",
-      value: `\`${wordList}\`${moreText}`,
-    });
-  }
-
-  return embed;
-}
-
-// Build bad words action select menu
-function buildBadWordsSelectMenu(userId) {
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId(`${BADWORD_ADD_PREFIX}${userId}`)
-    .setPlaceholder("Select an action...")
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Add Custom Word")
-        .setDescription("Add a new word to the filter")
-        .setEmoji("➕")
-        .setValue("add"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Remove Custom Word")
-        .setDescription("Remove a word from your custom list")
-        .setEmoji("➖")
-        .setValue("remove")
+      { name: "Built-in", value: String(stats.builtInCount), inline: true },
+      { name: "Custom", value: `${stats.customCount}/${stats.maxCustom}`, inline: true },
+      { name: "Remaining", value: String(stats.remaining), inline: true }
     );
-
-  return [new ActionRowBuilder().addComponents(selectMenu)];
+  if (stats.customWords.length) {
+    embed.addFields({ name: "Custom list", value: `\`${stats.customWords.slice(0, 20).join(", ")}\`` });
+  }
+  return embed;
 }
 
-// Build plans page
-async function buildPlansPage(guildId) {
-  const setting = await getOrCreateGuildSetting(guildId);
+function buildBadWordsComponents(userId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(scoped(PREFIX.BADWORD_ACTION, userId))
+        .setPlaceholder("Select an action...")
+        .addOptions(
+          { label: "Add Custom Word", value: "add", emoji: "➕" },
+          { label: "Remove Custom Word", value: "remove", emoji: "➖" }
+        )
+    ),
+    ...buildNavButtons(userId),
+  ];
+}
 
-  const embed = new EmbedBuilder()
+function buildPlansPage() {
+  return new EmbedBuilder()
     .setTitle("📊 Plans & Usage")
-    .setDescription("View your current plan and usage information.")
+    .setDescription("Plans, trials, payments, quotas, and plan-based restrictions are not implemented yet.")
     .setColor(0x57f287)
-    .addFields(
-      {
-        name: "Current Plan",
-        value: `**${setting.plan.charAt(0).toUpperCase() + setting.plan.slice(1)}**`,
-        inline: true,
-      },
-      {
-        name: "Status",
-        value: "✅ Active",
-        inline: true,
-      }
-    )
-    .setFooter({ text: "Premium features coming soon!" });
+    .addFields({ name: "Current behavior", value: "Every server supplies its own Groq API key. No free trial is provided." });
+}
 
-  if (setting.planExpiresAt) {
-    embed.addFields({
-      name: "Expires At",
-      value: `<t:${Math.floor(setting.planExpiresAt.getTime() / 1000)}:R>`,
-      inline: true,
-    });
-  }
+async function renderPage(page, guildId, userId) {
+  if (page === PAGES.FEATURES) return { embeds: [await buildFeaturesPage(guildId)], components: buildFeatureComponents(userId) };
+  if (page === PAGES.ESCALATION) return { embeds: [await buildEscalationPage(guildId)], components: buildNavButtons(userId) };
+  if (page === PAGES.AIAPI) return { embeds: [await buildAiApiPage(guildId)], components: await buildAiApiComponents(guildId, userId) };
+  if (page === PAGES.BADWORDS) return { embeds: [await buildBadWordsPage(guildId)], components: buildBadWordsComponents(userId) };
+  if (page === PAGES.PLANS) return { embeds: [buildPlansPage()], components: buildNavButtons(userId) };
+  return { embeds: [await buildHomePage(guildId)], components: buildHomeComponents(userId) };
+}
 
-  embed.addFields({
-    name: "🚧 Coming Soon",
-    value:
-      "Premium plans with advanced features are under development. Stay tuned for updates!",
-  });
-
-  return embed;
+function buildApiKeyModal(userId) {
+  const modal = new ModalBuilder()
+    .setCustomId(scoped(PREFIX.API_MODAL, userId))
+    .setTitle("Set Groq API Key");
+  const input = new TextInputBuilder()
+    .setCustomId("groq_api_key")
+    .setLabel("Groq API key")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(10)
+    .setMaxLength(256)
+    .setPlaceholder("gsk_...");
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  return modal;
 }
 
 module.exports = {
@@ -450,448 +343,241 @@ module.exports = {
     .setName("settings")
     .setDescription("Configure Pixy AI settings for this server.")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
 
   async execute(interaction) {
-    if (!interaction.guild) {
-      await interaction.reply({
-        content: "This command can only be used inside a server.",
-        flags: EPHEMERAL,
-      });
+    if (!interaction.guild || !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      await interaction.reply({ content: "You need Administrator permission in a server to use this command.", flags: EPHEMERAL });
       return;
     }
-
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-      await interaction.reply({
-        content: "You need Administrator permission to use this command.",
-        flags: EPHEMERAL,
-      });
-      return;
-    }
-
-    // Ensure guild setting exists
     await getOrCreateGuildSetting(interaction.guild.id);
-
-    const embed = await buildHomePage(interaction.guild.id);
-    const selectMenu = buildHomeSelectMenu(interaction.user.id);
-
-    await interaction.reply({
-      embeds: [embed],
-      components: selectMenu,
-      flags: EPHEMERAL,
-    });
+    await interaction.reply({ ...(await renderPage(PAGES.HOME, interaction.guild.id, interaction.user.id)), flags: EPHEMERAL });
   },
 
   selectMenuHandlers: [
-    // Home page category selector
     {
-      customIdPrefix: `${NAV_PREFIX}`,
+      customIdPrefix: PREFIX.NAV,
       type: "string",
-
       async execute(interaction) {
-        const rest = interaction.customId.slice(NAV_PREFIX.length);
-        const [userId, source] = rest.split(":");
-
+        const [userId] = interaction.customId.slice(PREFIX.NAV.length).split(":");
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
         await interaction.deferUpdate();
-
-        const respond = createResponder(interaction);
-        const page = interaction.values?.[0];
-        const guildId = interaction.guild.id;
-
-        if (!page || !Object.values(PAGES).includes(page)) {
-          await respond({
-            content: "Invalid selection.",
-            components: [],
-          });
-          return;
-        }
-
-        let embed;
-        let components = [];
-
-        switch (page) {
-          case PAGES.FEATURES:
-            embed = await buildFeaturesPage(guildId);
-            components = [
-              ...buildFeaturesSelectMenu(userId),
-              ...buildNavButtons(userId, page),
-            ];
-            break;
-
-          case PAGES.ESCALATION:
-            embed = await buildEscalationPage(guildId);
-            components = buildNavButtons(userId, page);
-            break;
-
-          case PAGES.AIAPI:
-            embed = await buildAiApiPage(guildId);
-            components = buildNavButtons(userId, page);
-            break;
-
-          case PAGES.BADWORDS:
-            embed = await buildBadWordsPage(guildId);
-            components = [
-              ...buildBadWordsSelectMenu(userId),
-              ...buildNavButtons(userId, page),
-            ];
-            break;
-
-          case PAGES.PLANS:
-            embed = await buildPlansPage(guildId);
-            components = buildNavButtons(userId, page);
-            break;
-
-          default:
-            embed = await buildHomePage(guildId);
-            components = buildHomeSelectMenu(userId);
-        }
-
-        await respond({
-          embeds: [embed],
-          components,
-        });
+        const page = interaction.values?.[0] || PAGES.HOME;
+        await interaction.editReply(await renderPage(page, interaction.guild.id, userId));
       },
     },
-
-    // Features toggle selector
     {
-      customIdPrefix: `${TOGGLE_PREFIX}`,
+      customIdPrefix: PREFIX.TOGGLE,
       type: "string",
-
       async execute(interaction) {
-        const userId = interaction.customId.slice(TOGGLE_PREFIX.length);
-
+        const userId = interaction.customId.slice(PREFIX.TOGGLE.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
-        await interaction.deferUpdate();
-
-        const respond = createResponder(interaction);
-        const setting = interaction.values?.[0];
-        const guildId = interaction.guild.id;
-
-        if (!setting) {
-          await respond({
-            content: "Invalid selection.",
-            components: [],
-          });
+        const field = interaction.values?.[0];
+        if (!FEATURE_FIELDS.has(field)) {
+          await interaction.reply({ content: "Invalid feature setting.", flags: EPHEMERAL });
           return;
         }
-
-        // Toggle the setting
-        const currentSetting = await getOrCreateGuildSetting(guildId);
-        const newValue = !currentSetting[setting];
-
-        await prisma.guildSetting.update({
-          where: { guildId },
-          data: { [setting]: newValue },
-        });
-
-        // Rebuild the page
-        const embed = await buildFeaturesPage(guildId);
-        const components = [
-          ...buildFeaturesSelectMenu(userId),
-          ...buildNavButtons(userId, PAGES.FEATURES),
-        ];
-
-        await respond({
-          embeds: [embed],
-          components,
-        });
+        await interaction.deferUpdate();
+        const setting = await getOrCreateGuildSetting(interaction.guild.id);
+        await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { [field]: !setting[field] } });
+        await interaction.editReply(await renderPage(PAGES.FEATURES, interaction.guild.id, userId));
       },
     },
-
-    // Bad words add/remove selector
     {
-      customIdPrefix: `${BADWORD_ADD_PREFIX}`,
+      customIdPrefix: PREFIX.MODEL_SELECT,
       type: "string",
-
       async execute(interaction) {
-        const userId = interaction.customId.slice(BADWORD_ADD_PREFIX.length);
-
+        const userId = interaction.customId.slice(PREFIX.MODEL_SELECT.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
-        const respond = createResponder(interaction);
+        await interaction.deferUpdate();
+        const modelId = interaction.values?.[0];
+        if (!isCuratedGroqModel(modelId)) {
+          await interaction.editReply({ content: "That model is not supported by Pixy.", embeds: [], components: buildNavButtons(userId) });
+          return;
+        }
+        const config = await getGuildAiConfig(interaction.guild.id, { requireApiKey: true });
+        const available = await listAvailableGroqModels(config.groq.apiKey);
+        if (!available.some((model) => model.id === modelId)) {
+          await interaction.editReply({ content: "That model is not currently available to this Groq key.", embeds: [], components: buildNavButtons(userId) });
+          return;
+        }
+        await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { aiModel: modelId } });
+        await interaction.editReply(await renderPage(PAGES.AIAPI, interaction.guild.id, userId));
+      },
+    },
+    {
+      customIdPrefix: PREFIX.BADWORD_ACTION,
+      type: "string",
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.BADWORD_ACTION.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
         const action = interaction.values?.[0];
-        const guildId = interaction.guild.id;
-
         if (action === "add") {
-          // Show modal for adding word
-          const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder: ModalActionRowBuilder } = require("discord.js");
-
-          const modal = new ModalBuilder()
-            .setCustomId(`settings_badwords_modal:${userId}`)
-            .setTitle("Add Custom Bad Word");
-
-          const wordInput = new TextInputBuilder()
-            .setCustomId("word")
-            .setLabel("Word to add")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true)
-            .setMaxLength(100)
-            .setPlaceholder("Enter the word to filter");
-
-          modal.addComponents(new ModalActionRowBuilder().addComponents(wordInput));
-
+          const modal = new ModalBuilder().setCustomId(scoped(PREFIX.BADWORD_MODAL, userId)).setTitle("Add Custom Bad Word");
+          modal.addComponents(new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId("word").setLabel("Word to add").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100)
+          ));
           await interaction.showModal(modal);
           return;
         }
-
-        if (action === "remove") {
-          await interaction.deferUpdate();
-          const stats = await getBadWordsStats(guildId);
-
-          if (stats.customWords.length === 0) {
-            await respond({
-              content: "No custom words to remove.",
-              components: [],
-            });
-            return;
-          }
-
-          // Build select menu with custom words
-          const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId(`${BADWORD_REMOVE_PREFIX}${userId}`)
-            .setPlaceholder("Select a word to remove...")
-            .setMinValues(1)
-            .setMaxValues(1);
-
-          stats.customWords.slice(0, 25).forEach((word) => {
-            selectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                .setLabel(word)
-                .setValue(word)
-            );
-          });
-
-          const components = [
-            new ActionRowBuilder().addComponents(selectMenu),
-            ...buildNavButtons(userId, PAGES.BADWORDS),
-          ];
-
-          await respond({
-            content: "Select a custom word to remove:",
-            components,
-          });
+        await interaction.deferUpdate();
+        const stats = await getBadWordsStats(interaction.guild.id);
+        if (!stats.customWords.length) {
+          await interaction.editReply({ content: "No custom words to remove.", embeds: [], components: buildNavButtons(userId) });
           return;
         }
-
-        await respond({
-          content: "Invalid action.",
-          components: [],
-        });
+        const menu = new StringSelectMenuBuilder()
+          .setCustomId(scoped(PREFIX.BADWORD_REMOVE, userId))
+          .setPlaceholder("Select a word to remove...")
+          .addOptions(stats.customWords.slice(0, 25).map((word) => ({ label: word, value: word })));
+        await interaction.editReply({ content: "Select a custom word to remove:", embeds: [], components: [new ActionRowBuilder().addComponents(menu), ...buildNavButtons(userId)] });
       },
     },
-
-    // Bad words remove selector
     {
-      customIdPrefix: `${BADWORD_REMOVE_PREFIX}`,
+      customIdPrefix: PREFIX.BADWORD_REMOVE,
       type: "string",
-
       async execute(interaction) {
-        const userId = interaction.customId.slice(BADWORD_REMOVE_PREFIX.length);
-
+        const userId = interaction.customId.slice(PREFIX.BADWORD_REMOVE.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
         await interaction.deferUpdate();
-
-        const respond = createResponder(interaction);
-        const word = interaction.values?.[0];
-        const guildId = interaction.guild.id;
-
-        if (!word) {
-          await respond({
-            content: "Invalid word selected.",
-            components: [],
-          });
-          return;
-        }
-
-        const result = await removeCustomBadWord(guildId, word);
-
-        if (!result.ok) {
-          await respond({
-            content: `Failed to remove word: ${result.code}`,
-            components: [],
-          });
-          return;
-        }
-
-        const embed = await buildBadWordsPage(guildId);
-        const components = [
-          ...buildBadWordsSelectMenu(userId),
-          ...buildNavButtons(userId, PAGES.BADWORDS),
-        ];
-
-        await respond({
-          content: `Removed custom word: \`${word}\``,
-          embeds: [embed],
-          components,
-        });
+        await removeCustomBadWord(interaction.guild.id, interaction.values?.[0]);
+        await interaction.editReply(await renderPage(PAGES.BADWORDS, interaction.guild.id, userId));
       },
     },
   ],
 
   buttonHandlers: [
-    // Home button
     {
-      customIdPrefix: `${HOME_PREFIX}`,
-
+      customIdPrefix: PREFIX.HOME,
       async execute(interaction) {
-        const userId = interaction.customId.slice(HOME_PREFIX.length);
-
+        const userId = interaction.customId.slice(PREFIX.HOME.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
         await interaction.deferUpdate();
-
-        const respond = createResponder(interaction);
-        const embed = await buildHomePage(interaction.guild.id);
-        const selectMenu = buildHomeSelectMenu(userId);
-
-        await respond({
-          embeds: [embed],
-          components: selectMenu,
+        await interaction.editReply(await renderPage(PAGES.HOME, interaction.guild.id, userId));
+      },
+    },
+    {
+      customIdPrefix: PREFIX.NAV,
+      async execute(interaction) {
+        const [userId, page] = interaction.customId.slice(PREFIX.NAV.length).split(":");
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        await interaction.deferUpdate();
+        await interaction.editReply(await renderPage(page, interaction.guild.id, userId));
+      },
+    },
+    {
+      customIdPrefix: PREFIX.API_SET,
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.API_SET.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        await interaction.showModal(buildApiKeyModal(userId));
+      },
+    },
+    {
+      customIdPrefix: PREFIX.API_REMOVE,
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.API_REMOVE.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        await interaction.reply({
+          content: "Remove this server's Groq API key? AI features will stop until a new key is added.",
+          components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(scoped(PREFIX.API_REMOVE_CONFIRM, userId)).setLabel("Remove API Key").setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(scoped(PREFIX.API_REMOVE_CANCEL, userId)).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+          )],
+          flags: EPHEMERAL,
         });
       },
     },
-
-    // Navigation button
     {
-      customIdPrefix: `${NAV_PREFIX}`,
-
+      customIdPrefix: PREFIX.API_REMOVE_CONFIRM,
       async execute(interaction) {
-        const rest = interaction.customId.slice(NAV_PREFIX.length);
-        const [userId, page] = rest.split(":");
-
+        const userId = interaction.customId.slice(PREFIX.API_REMOVE_CONFIRM.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
         await interaction.deferUpdate();
-
-        const respond = createResponder(interaction);
-        const guildId = interaction.guild.id;
-
-        let embed;
-        let components = [];
-
-        switch (page) {
-          case PAGES.FEATURES:
-            embed = await buildFeaturesPage(guildId);
-            components = [
-              ...buildFeaturesSelectMenu(userId),
-              ...buildNavButtons(userId, page),
-            ];
-            break;
-
-          case PAGES.ESCALATION:
-            embed = await buildEscalationPage(guildId);
-            components = buildNavButtons(userId, page);
-            break;
-
-          case PAGES.AIAPI:
-            embed = await buildAiApiPage(guildId);
-            components = buildNavButtons(userId, page);
-            break;
-
-          case PAGES.BADWORDS:
-            embed = await buildBadWordsPage(guildId);
-            components = [
-              ...buildBadWordsSelectMenu(userId),
-              ...buildNavButtons(userId, page),
-            ];
-            break;
-
-          case PAGES.PLANS:
-            embed = await buildPlansPage(guildId);
-            components = buildNavButtons(userId, page);
-            break;
-
-          default:
-            embed = await buildHomePage(guildId);
-            components = buildHomeSelectMenu(userId);
-        }
-
-        await respond({
-          embeds: [embed],
-          components,
-        });
+        await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { groqApiKeyEncrypted: null, aiModel: null } });
+        await interaction.editReply({ content: "Groq API key removed. AI features are now unavailable for this server.", embeds: [], components: [] });
       },
     },
-
-    // Close button
     {
-      customIdPrefix: `${CLOSE_PREFIX}`,
-
+      customIdPrefix: PREFIX.API_REMOVE_CANCEL,
       async execute(interaction) {
-        const userId = interaction.customId.slice(CLOSE_PREFIX.length);
-
+        const userId = interaction.customId.slice(PREFIX.API_REMOVE_CANCEL.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
-        const respond = createResponder(interaction);
-
-        await respond({
-          content: "Settings panel closed.",
-          embeds: [],
-          components: [],
-        });
+        await interaction.update({ content: "Cancelled. The API key was not changed.", components: [] });
+      },
+    },
+    {
+      customIdPrefix: PREFIX.MODEL_RESET,
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.MODEL_RESET.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        await interaction.deferUpdate();
+        await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { aiModel: null } });
+        await interaction.editReply(await renderPage(PAGES.AIAPI, interaction.guild.id, userId));
+      },
+    },
+    {
+      customIdPrefix: PREFIX.CLOSE,
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.CLOSE.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        await responder(interaction)({ content: "Settings panel closed.", embeds: [], components: [] });
       },
     },
   ],
 
   modalHandlers: [
-    // Bad words add modal
     {
-      customIdPrefix: "settings_badwords_modal:",
-
+      customIdPrefix: PREFIX.API_MODAL,
       async execute(interaction) {
-        const userId = interaction.customId.slice("settings_badwords_modal:".length);
-
+        const userId = interaction.customId.slice(PREFIX.API_MODAL.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-
-        const word = cleanText(interaction.fields.getTextInputValue("word"));
-        const guildId = interaction.guild.id;
-
-        if (!word) {
-          await interaction.reply({
-            content: "Please enter a valid word.",
-            flags: EPHEMERAL,
+        await interaction.deferReply({ flags: EPHEMERAL });
+        const apiKey = cleanText(interaction.fields.getTextInputValue("groq_api_key"));
+        try {
+          const validation = await validateGroqApiKey(apiKey);
+          const encrypted = encryptCredential(apiKey, {
+            guildId: interaction.guild.id,
+            credentialType: "groq-api-key",
           });
-          return;
+          const current = await getOrCreateGuildSetting(interaction.guild.id);
+          const currentStillAvailable = current.aiModel && validation.models.some((model) => model.id === current.aiModel);
+          await prisma.guildSetting.update({
+            where: { guildId: interaction.guild.id },
+            data: {
+              groqApiKeyEncrypted: encrypted,
+              aiModel: currentStillAvailable ? current.aiModel : null,
+            },
+          });
+          await interaction.editReply({
+            content: validation.models.length
+              ? "Groq API key validated, encrypted, and saved."
+              : "Groq API key validated and saved, but none of Pixy's supported models are currently available to it.",
+            ...(await renderPage(PAGES.AIAPI, interaction.guild.id, userId)),
+          });
+        } catch (error) {
+          const status = error?.status || error?.response?.status;
+          const message = status === 401
+            ? "Groq rejected that API key. Check it and try again."
+            : status === 429
+              ? "Groq is rate-limiting validation. Your existing settings were not changed."
+              : "Pixy could not validate that Groq API key. Your existing settings were not changed.";
+          await interaction.editReply({ content: message });
         }
-
-        const result = await addCustomBadWord(guildId, word);
-
+      },
+    },
+    {
+      customIdPrefix: PREFIX.BADWORD_MODAL,
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.BADWORD_MODAL.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        const result = await addCustomBadWord(interaction.guild.id, cleanText(interaction.fields.getTextInputValue("word")));
         if (!result.ok) {
-          let message = "Failed to add word.";
-          if (result.code === "already_builtin") {
-            message = "This word is already in the built-in filter.";
-          } else if (result.code === "already_exists") {
-            message = "This word is already in your custom list.";
-          } else if (result.code === "max_reached") {
-            message = `You've reached the maximum of ${result.max} custom words.`;
-          }
-
-          await interaction.reply({
-            content: message,
-            flags: EPHEMERAL,
-          });
+          await interaction.reply({ content: `Could not add that word: ${result.code}.`, flags: EPHEMERAL });
           return;
         }
-
-        const embed = await buildBadWordsPage(guildId);
-        const selectMenu = buildBadWordsSelectMenu(userId);
-
-        await interaction.reply({
-          content: `Added custom word: \`${word}\` (${result.count} total)`,
-          embeds: [embed],
-          components: [
-            ...buildBadWordsSelectMenu(userId),
-            ...buildNavButtons(userId, PAGES.BADWORDS),
-          ],
-          flags: EPHEMERAL,
-        });
+        await interaction.reply({ content: "Custom word added.", ...(await renderPage(PAGES.BADWORDS, interaction.guild.id, userId)), flags: EPHEMERAL });
       },
     },
   ],

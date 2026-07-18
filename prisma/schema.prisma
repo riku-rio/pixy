@@ -24,6 +24,7 @@ model GuildConfig {
   ticketChannels TicketChannel[]
   adminRoutes    AdminRoute[]
 
+  // Legacy fields retained for migration compatibility. New AI settings live in GuildSetting.
   aiEnabled       Boolean @default(true)
   aiProvider      String  @default("groq")
   aiModel         String?
@@ -131,20 +132,20 @@ model GuildSetting {
   guildId String @unique
 
   // Features
-  aiReplyEnabled     Boolean @default(true)
-  closeTicketEnabled Boolean @default(true)
+  aiReplyEnabled      Boolean @default(true)
+  closeTicketEnabled  Boolean @default(true)
   renameReviewEnabled Boolean @default(true)
-  escalationEnabled  Boolean @default(true)
+  escalationEnabled   Boolean @default(true)
   agentActionsEnabled Boolean @default(true)
 
-  // AI-API
-  groqApiKey String? // Encrypted with PIXY_CREDENTIAL_ENCRYPTION_KEY
-  aiModel    String? // null = use default "openai/gpt-oss-120b"
+  // AI API. The credential is an AES-256-GCM envelope, never plaintext.
+  groqApiKeyEncrypted String?
+  aiModel             String? // null = use "openai/gpt-oss-120b"
 
   // Bad Words
   customBadWords String @default("[]") // JSON array, max 100 entries
 
-  // Plans
+  // Reserved for future plans. No trial or billing behavior is implemented.
   plan          String    @default("free")
   planExpiresAt DateTime?
 
