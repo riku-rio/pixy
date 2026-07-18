@@ -20,13 +20,10 @@ const {
 } = require("../config/ai");
 const {
   DEFAULT_GROQ_MODEL,
-  isCuratedGroqModel,
-  listAvailableGroqModels,
   validateGroqApiKey,
+  validateGroqChatModel,
 } = require("../ai/groqModels");
-const {
-  encryptCredential,
-} = require("../security/credentialEncryption");
+const { encryptCredential } = require("../security/credentialEncryption");
 const {
   getBadWordsStats,
   addCustomBadWord,
@@ -47,7 +44,8 @@ const PREFIX = {
   API_REMOVE: "settings_api_remove:",
   API_REMOVE_CONFIRM: "settings_api_remove_confirm:",
   API_REMOVE_CANCEL: "settings_api_remove_cancel:",
-  MODEL_SELECT: "settings_model_select:",
+  MODEL_SET: "settings_model_set:",
+  MODEL_MODAL: "settings_model_modal:",
   MODEL_RESET: "settings_model_reset:",
 };
 
@@ -112,7 +110,6 @@ function buildNavButtons(userId) {
 async function buildHomePage(guildId) {
   const setting = await getOrCreateGuildSetting(guildId);
   const badWordsStats = await getBadWordsStats(guildId);
-
   return new EmbedBuilder()
     .setTitle("🤖 Pixy Settings")
     .setDescription("Configure Pixy AI for your server. Select a category below.")
@@ -142,11 +139,7 @@ async function buildHomePage(guildId) {
         value: `Built-in: ${badWordsStats.builtInCount}\nCustom: ${badWordsStats.customCount}/${badWordsStats.maxCustom}`,
         inline: true,
       },
-      {
-        name: "📊 Plans & Usage",
-        value: "Not implemented yet.",
-        inline: true,
-      }
+      { name: "📊 Plans & Usage", value: "Not implemented yet.", inline: true }
     );
 }
 
@@ -222,14 +215,14 @@ async function buildAiApiPage(guildId) {
   const isDefault = !config.setting.aiModel;
   const embed = new EmbedBuilder()
     .setTitle("🔑 AI API Settings")
-    .setDescription("Configure the Groq credential and text/reasoning model used by this server.")
+    .setDescription("Configure the Groq credential and type an exact text/chat model ID for this server.")
     .setColor(0xfee75c)
     .addFields(
       { name: "API Key Status", value: apiStatusLabel(config.credentialStatus), inline: true },
       { name: "Current Model", value: `\`${config.groq.model}\``, inline: true },
       { name: "Model Source", value: isDefault ? "Default fallback" : "Server override", inline: true }
     )
-    .setFooter({ text: "The API key is encrypted with AES-256-GCM before storage." });
+    .setFooter({ text: "Typed models are checked against Groq and probed with a minimal chat completion before saving." });
 
   if (config.credentialStatus !== "configured") {
     embed.addFields({
@@ -242,35 +235,15 @@ async function buildAiApiPage(guildId) {
 
 async function buildAiApiComponents(guildId, userId) {
   const config = await getGuildAiConfig(guildId);
-  const components = [];
-
-  if (config.credentialStatus === "configured") {
-    try {
-      const models = await listAvailableGroqModels(config.groq.apiKey);
-      if (models.length) {
-        const menu = new StringSelectMenuBuilder()
-          .setCustomId(scoped(PREFIX.MODEL_SELECT, userId))
-          .setPlaceholder("Choose an available text/reasoning model...")
-          .addOptions(models.map((model) => ({
-            label: model.label,
-            description: model.description,
-            value: model.id,
-            default: config.groq.model === model.id,
-          })));
-        components.push(new ActionRowBuilder().addComponents(menu));
-      }
-    } catch {
-      // The embed still renders and the administrator can replace the key.
-    }
-  }
-
-  components.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(scoped(PREFIX.API_SET, userId)).setLabel(config.credentialStatus === "configured" ? "Replace API Key" : "Set API Key").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(scoped(PREFIX.API_REMOVE, userId)).setLabel("Remove API Key").setStyle(ButtonStyle.Danger).setDisabled(config.credentialStatus === "missing"),
-    new ButtonBuilder().setCustomId(scoped(PREFIX.MODEL_RESET, userId)).setLabel("Reset Model").setStyle(ButtonStyle.Secondary).setDisabled(!config.setting.aiModel)
-  ));
-  components.push(...buildNavButtons(userId));
-  return components;
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(scoped(PREFIX.API_SET, userId)).setLabel(config.credentialStatus === "configured" ? "Replace API Key" : "Set API Key").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(scoped(PREFIX.API_REMOVE, userId)).setLabel("Remove API Key").setStyle(ButtonStyle.Danger).setDisabled(config.credentialStatus === "missing"),
+      new ButtonBuilder().setCustomId(scoped(PREFIX.MODEL_SET, userId)).setLabel("Set Model").setStyle(ButtonStyle.Primary).setDisabled(config.credentialStatus !== "configured"),
+      new ButtonBuilder().setCustomId(scoped(PREFIX.MODEL_RESET, userId)).setLabel("Reset Model").setStyle(ButtonStyle.Secondary).setDisabled(!config.setting.aiModel)
+    ),
+    ...buildNavButtons(userId),
+  ];
 }
 
 async function buildBadWordsPage(guildId) {
@@ -323,19 +296,49 @@ async function renderPage(page, guildId, userId) {
 }
 
 function buildApiKeyModal(userId) {
-  const modal = new ModalBuilder()
-    .setCustomId(scoped(PREFIX.API_MODAL, userId))
-    .setTitle("Set Groq API Key");
-  const input = new TextInputBuilder()
-    .setCustomId("groq_api_key")
-    .setLabel("Groq API key")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMinLength(10)
-    .setMaxLength(256)
-    .setPlaceholder("gsk_...");
-  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  const modal = new ModalBuilder().setCustomId(scoped(PREFIX.API_MODAL, userId)).setTitle("Set Groq API Key");
+  modal.addComponents(new ActionRowBuilder().addComponents(
+    new TextInputBuilder()
+      .setCustomId("groq_api_key")
+      .setLabel("Groq API key")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(10)
+      .setMaxLength(256)
+      .setPlaceholder("gsk_...")
+  ));
   return modal;
+}
+
+function buildModelModal(userId) {
+  const modal = new ModalBuilder().setCustomId(scoped(PREFIX.MODEL_MODAL, userId)).setTitle("Set Groq Model");
+  modal.addComponents(new ActionRowBuilder().addComponents(
+    new TextInputBuilder()
+      .setCustomId("groq_model")
+      .setLabel("Exact Groq model ID")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(2)
+      .setMaxLength(200)
+      .setPlaceholder("Example: openai/gpt-oss-120b")
+  ));
+  return modal;
+}
+
+function getModelValidationMessage(error) {
+  if (error?.code === "model_not_found") return "That model is not available to this server's Groq API key.";
+  if (error?.code === "model_inactive") return "That Groq model is currently inactive or unavailable.";
+  if (error?.code === "audio_model") return "That model is for audio, transcription, or text-to-speech. Pixy requires a text/chat model.";
+  if (error?.code === "moderation_model") return "That model is a moderation or guard model. It cannot be used for Pixy's ticket replies.";
+  if (error?.code === "image_model") return "That model is image-only or vision-generation focused. Pixy requires a text/chat model.";
+  if (error?.code === "embedding_model") return "That model is an embedding or reranking model. Pixy requires a text/chat completion model.";
+  if (error?.code === "system_model") return "That Groq system/compound model is not allowed for this setting.";
+  if (error?.code === "not_chat_compatible") return "Groq exposes that model, but it did not accept a normal text chat-completion request.";
+  const status = error?.status || error?.response?.status;
+  if (status === 401) return "Groq rejected this server's API key. Replace the key and try again.";
+  if (status === 403) return "This model is blocked by the Groq project or organization permissions for this key.";
+  if (status === 429) return "Groq is rate-limiting model verification. The current model was not changed.";
+  return "Pixy could not verify that model as an available text/chat model. The current model was not changed.";
 }
 
 module.exports = {
@@ -363,8 +366,7 @@ module.exports = {
         const [userId] = interaction.customId.slice(PREFIX.NAV.length).split(":");
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
         await interaction.deferUpdate();
-        const page = interaction.values?.[0] || PAGES.HOME;
-        await interaction.editReply(await renderPage(page, interaction.guild.id, userId));
+        await interaction.editReply(await renderPage(interaction.values?.[0] || PAGES.HOME, interaction.guild.id, userId));
       },
     },
     {
@@ -385,35 +387,12 @@ module.exports = {
       },
     },
     {
-      customIdPrefix: PREFIX.MODEL_SELECT,
-      type: "string",
-      async execute(interaction) {
-        const userId = interaction.customId.slice(PREFIX.MODEL_SELECT.length);
-        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-        await interaction.deferUpdate();
-        const modelId = interaction.values?.[0];
-        if (!isCuratedGroqModel(modelId)) {
-          await interaction.editReply({ content: "That model is not supported by Pixy.", embeds: [], components: buildNavButtons(userId) });
-          return;
-        }
-        const config = await getGuildAiConfig(interaction.guild.id, { requireApiKey: true });
-        const available = await listAvailableGroqModels(config.groq.apiKey);
-        if (!available.some((model) => model.id === modelId)) {
-          await interaction.editReply({ content: "That model is not currently available to this Groq key.", embeds: [], components: buildNavButtons(userId) });
-          return;
-        }
-        await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { aiModel: modelId } });
-        await interaction.editReply(await renderPage(PAGES.AIAPI, interaction.guild.id, userId));
-      },
-    },
-    {
       customIdPrefix: PREFIX.BADWORD_ACTION,
       type: "string",
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.BADWORD_ACTION.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
-        const action = interaction.values?.[0];
-        if (action === "add") {
+        if (interaction.values?.[0] === "add") {
           const modal = new ModalBuilder().setCustomId(scoped(PREFIX.BADWORD_MODAL, userId)).setTitle("Add Custom Bad Word");
           modal.addComponents(new ActionRowBuilder().addComponents(
             new TextInputBuilder().setCustomId("word").setLabel("Word to add").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100)
@@ -472,6 +451,14 @@ module.exports = {
         const userId = interaction.customId.slice(PREFIX.API_SET.length);
         if (!(await assertOwnerAndAdmin(interaction, userId))) return;
         await interaction.showModal(buildApiKeyModal(userId));
+      },
+    },
+    {
+      customIdPrefix: PREFIX.MODEL_SET,
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.MODEL_SET.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        await interaction.showModal(buildModelModal(userId));
       },
     },
     {
@@ -542,7 +529,7 @@ module.exports = {
             credentialType: "groq-api-key",
           });
           const current = await getOrCreateGuildSetting(interaction.guild.id);
-          const currentStillAvailable = current.aiModel && validation.models.some((model) => model.id === current.aiModel);
+          const currentStillAvailable = current.aiModel && validation.modelIds.includes(current.aiModel);
           await prisma.guildSetting.update({
             where: { guildId: interaction.guild.id },
             data: {
@@ -551,9 +538,7 @@ module.exports = {
             },
           });
           await interaction.editReply({
-            content: validation.models.length
-              ? "Groq API key validated, encrypted, and saved."
-              : "Groq API key validated and saved, but none of Pixy's supported models are currently available to it.",
+            content: "Groq API key validated, encrypted, and saved.",
             ...(await renderPage(PAGES.AIAPI, interaction.guild.id, userId)),
           });
         } catch (error) {
@@ -564,6 +549,26 @@ module.exports = {
               ? "Groq is rate-limiting validation. Your existing settings were not changed."
               : "Pixy could not validate that Groq API key. Your existing settings were not changed.";
           await interaction.editReply({ content: message });
+        }
+      },
+    },
+    {
+      customIdPrefix: PREFIX.MODEL_MODAL,
+      async execute(interaction) {
+        const userId = interaction.customId.slice(PREFIX.MODEL_MODAL.length);
+        if (!(await assertOwnerAndAdmin(interaction, userId))) return;
+        await interaction.deferReply({ flags: EPHEMERAL });
+        const modelId = cleanText(interaction.fields.getTextInputValue("groq_model"));
+        try {
+          const config = await getGuildAiConfig(interaction.guild.id, { requireApiKey: true });
+          await validateGroqChatModel({ apiKey: config.groq.apiKey, modelId });
+          await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { aiModel: modelId } });
+          await interaction.editReply({
+            content: `Model verified and saved: \`${modelId}\`.`,
+            ...(await renderPage(PAGES.AIAPI, interaction.guild.id, userId)),
+          });
+        } catch (error) {
+          await interaction.editReply({ content: getModelValidationMessage(error) });
         }
       },
     },
