@@ -13,7 +13,7 @@ const { prisma } = require("../config/prisma");
 const { getGuildAiConfig, getOrCreateGuildSetting } = require("../config/ai");
 const { DEFAULT_GROQ_MODEL, validateGroqApiKey, validateGroqChatModel } = require("../ai/groqModels");
 const { encryptCredential } = require("../security/credentialEncryption");
-const { activateGuildTrial, getGuildPlanStatus } = require("../plans/guildPlanService");
+const { activateGuildTrial } = require("../plans/guildPlanService");
 const { getGuildDailyUsage } = require("../plans/guildUsageService");
 const { PLAN_STATES } = require("../plans/planConstants");
 
@@ -38,15 +38,20 @@ async function assertOwner(interaction, userId) {
 function nav(mode, page, userId, configured = true) {
   if (mode === "setup") {
     const backPage = page === PAGES.PLANS || page === PAGES.COMPLETE ? PAGES.AIAPI : "category";
-    const nextPage = page === PAGES.AIAPI ? PAGES.PLANS : PAGES.COMPLETE;
-    return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(id(mode, "nav", userId, backPage)).setLabel("Back").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(id(mode, "nav", userId, nextPage)).setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(page === PAGES.AIAPI && !configured)
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(id(mode, "nav", userId, backPage)).setLabel("Back").setStyle(ButtonStyle.Secondary)
     );
+    if (page !== PAGES.COMPLETE) {
+      const nextPage = page === PAGES.AIAPI ? PAGES.PLANS : PAGES.COMPLETE;
+      row.addComponents(
+        new ButtonBuilder().setCustomId(id(mode, "nav", userId, nextPage)).setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(page === PAGES.AIAPI && !configured)
+      );
+    }
+    return row;
   }
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(id(mode, "home", userId)).setLabel("Home").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(id(mode, "home", userId)).setLabel("Back").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(id(mode, "back", userId)).setLabel("Back").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(id(mode, "close", userId)).setLabel("Close").setStyle(ButtonStyle.Secondary)
   );
 }
@@ -69,7 +74,7 @@ async function renderAiApi(guildId, userId, mode = "settings") {
     new ButtonBuilder().setCustomId(id(mode, "model_set", userId)).setLabel("Set Model").setStyle(ButtonStyle.Primary).setDisabled(!configured),
     new ButtonBuilder().setCustomId(id(mode, "model_reset", userId)).setLabel("Reset Model").setStyle(ButtonStyle.Secondary).setDisabled(!config.setting.aiModel)
   );
-  return { embeds: [embed], components: [controls, nav(mode, PAGES.AIAPI, userId, configured)] };
+  return { content: null, embeds: [embed], components: [controls, nav(mode, PAGES.AIAPI, userId, configured)] };
 }
 
 async function renderPlans(guildId, userId, mode = "settings") {
@@ -84,8 +89,16 @@ async function renderPlans(guildId, userId, mode = "settings") {
     { name: "Remaining", value: usage.remaining.toLocaleString(), inline: true },
     { name: "Daily reset", value: `<t:${Math.floor(usage.resetAt.getTime() / 1000)}:R>`, inline: true },
   ];
-  if (active) fields.push({ name: "Trial ends", value: `<t:${Math.floor(usage.trialEndsAt.getTime() / 1000)}:R>`, inline: true });
-  if (expired) fields.push({ name: "Trial status", value: "Ended — paid plans are coming later.", inline: false });
+  if (active) {
+    fields.push(
+      { name: "Trial day", value: `${usage.trialDay} of 7`, inline: true },
+      { name: "Trial ends", value: `<t:${Math.floor(usage.trialEndsAt.getTime() / 1000)}:R>`, inline: true }
+    );
+  } else if (expired) {
+    fields.push({ name: "Trial status", value: "Ended — paid plans are coming later.", inline: false });
+  } else {
+    fields.push({ name: "Trial status", value: "Not activated", inline: false });
+  }
   const embed = new EmbedBuilder().setTitle("📊 Plans & Usage").setColor(0x57f287).addFields(fields)
     .setFooter({ text: "Pixy limits accepted AI requests. Groq project, model, token, and organization limits still apply." });
   const components = [];
@@ -99,7 +112,7 @@ async function renderPlans(guildId, userId, mode = "settings") {
     ));
   }
   components.push(nav(mode, PAGES.PLANS, userId, true));
-  return { embeds: [embed], components };
+  return { content: null, embeds: [embed], components };
 }
 
 async function renderComplete(guildId, userId) {
@@ -107,6 +120,7 @@ async function renderComplete(guildId, userId) {
   const usage = await getGuildDailyUsage(guildId);
   const guildConfig = await prisma.guildConfig.findUnique({ where: { guildId } });
   return {
+    content: null,
     embeds: [new EmbedBuilder().setTitle("✅ Pixy Setup Complete").setColor(0x57f287).addFields(
       { name: "Ticket category", value: guildConfig?.ticketCategoryId ? `<#${guildConfig.ticketCategoryId}>` : "Not configured", inline: true },
       { name: "Groq API", value: config.credentialStatus === "configured" ? "Configured" : "Missing", inline: true },
@@ -141,19 +155,18 @@ const selectMenuHandlers = [{
   async execute(interaction) {
     const info = parse(interaction.customId);
     if (!(await assertOwner(interaction, info.userId))) return;
-    if (info.action === "plan_select" && interaction.values?.[0] === "activate_trial") {
-      const embed = new EmbedBuilder().setTitle("Confirm 7-Day Free Trial").setColor(0xfee75c).setDescription([
-        "The trial starts immediately and can be activated only once for this server.",
-        "For exactly seven days, Pixy allows up to **1,000 accepted AI requests per UTC day**.",
-        "After it ends, Pixy continues working with **100 requests per UTC day**.",
-        "This server's own Groq API key is always used, and Groq's upstream limits still apply.",
-        "Removing the API key does not pause or extend the trial. Paid plans are not implemented yet.",
-      ].join("\n\n"));
-      await interaction.update({ embeds: [embed], components: [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(id(info.mode, "trial_confirm", info.userId)).setLabel("Confirm Activation").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(id(info.mode, "trial_cancel", info.userId)).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
-      )] });
-    }
+    if (info.action !== "plan_select" || interaction.values?.[0] !== "activate_trial") return;
+    const embed = new EmbedBuilder().setTitle("Confirm 7-Day Free Trial").setColor(0xfee75c).setDescription([
+      "The trial starts immediately and can be activated only once for this server.",
+      "For exactly seven days, Pixy allows up to **1,000 accepted AI requests per UTC day**.",
+      "After it ends, Pixy continues working with **100 requests per UTC day**.",
+      "This server's own Groq API key is always used, and Groq's upstream limits still apply.",
+      "Removing the API key does not pause or extend the trial. Paid plans are not implemented yet.",
+    ].join("\n\n"));
+    await interaction.update({ content: null, embeds: [embed], components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(id(info.mode, "trial_confirm", info.userId)).setLabel("Confirm Activation").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(id(info.mode, "trial_cancel", info.userId)).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+    )] });
   },
 }];
 
@@ -176,7 +189,7 @@ const buttonHandlers = [{
       await interaction.deferUpdate();
       const result = await activateGuildTrial(interaction.guild.id);
       const content = result.ok ? "The 7-day free trial is now active." : `The trial could not be activated: ${result.code}.`;
-      return interaction.editReply({ content, ...(await render(PAGES.PLANS, interaction.guild.id, info.userId, info.mode)) });
+      return interaction.editReply({ ...(await render(PAGES.PLANS, interaction.guild.id, info.userId, info.mode)), content });
     }
     if (info.action === "trial_cancel") return interaction.update(await render(PAGES.PLANS, interaction.guild.id, info.userId, info.mode));
     if (info.action === "nav") return interaction.update(await render(info.extra, interaction.guild.id, info.userId, info.mode));
