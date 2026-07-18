@@ -1,5 +1,6 @@
 const GroqSDK = require("groq-sdk");
 const { aiConfig } = require("../../config/ai");
+const { stripThinkBlocks } = require("../sanitizeModelOutput");
 
 const Groq = GroqSDK.default || GroqSDK;
 
@@ -25,10 +26,11 @@ async function generateGroqReply({ messages, model, apiKey }) {
     max_completion_tokens: aiConfig.maxOutputTokens,
   });
 
-  const content = response.choices?.[0]?.message?.content?.trim();
+  const rawContent = response.choices?.[0]?.message?.content || "";
+  const content = stripThinkBlocks(rawContent);
 
   return {
-    text: content || "",
+    text: content,
     raw: response,
     usage: response.usage || null,
     model: response.model || selectedModel,
