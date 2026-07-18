@@ -5,58 +5,29 @@ const {
   ButtonBuilder,
   ButtonStyle,
 } = require("discord.js");
-
 const { prisma } = require("../config/prisma");
 
 const EPHEMERAL = 64;
 const CONFIRM_PREFIX = "clear_guild_confirm:";
 const CANCEL_PREFIX = "clear_guild_cancel:";
 
-function hasAdminPermission(interaction) {
-  return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
-}
-
-function createResponder(interaction) {
-  return (payload) => interaction.deferred || interaction.replied
-    ? interaction.editReply(payload)
-    : interaction.update(payload);
-}
-
 async function assertOwnerAndAdmin(interaction, ownerUserId) {
-  if (!interaction.guild) {
-    await interaction.reply({ content: "This can only be used inside a server.", flags: EPHEMERAL });
-    return false;
-  }
-  if (interaction.user.id !== ownerUserId) {
-    await interaction.reply({ content: "Only the administrator who used `/pixy-clear` can confirm this action.", flags: EPHEMERAL });
-    return false;
-  }
-  if (!hasAdminPermission(interaction)) {
-    await interaction.reply({ content: "You need Administrator permission to use this action.", flags: EPHEMERAL });
+  if (!interaction.guild || interaction.user.id !== ownerUserId || !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    await interaction.reply({ content: "Only the administrator who used /pixy-clear can confirm this action.", flags: EPHEMERAL });
     return false;
   }
   return true;
 }
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("clear")
-    .setDescription("Delete all Pixy data stored for this server.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  data: new SlashCommandBuilder().setName("clear").setDescription("Delete all Pixy data stored for this server.").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
-
   async execute(interaction) {
-    if (!interaction.guild || !hasAdminPermission(interaction)) {
-      await interaction.reply({ content: "You need Administrator permission in a server to use this command.", flags: EPHEMERAL });
-      return;
-    }
-
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`${CONFIRM_PREFIX}${interaction.user.id}`).setLabel("Delete server data").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(`${CANCEL_PREFIX}${interaction.user.id}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
     );
-
     await interaction.reply({
       content: [
         "This permanently deletes all Pixy data stored for this server, including:",
@@ -64,6 +35,7 @@ module.exports = {
         "- Learned knowledge and ticket records",
         "- Admin routes and AI usage logs",
         "- Feature settings, model selection, and the encrypted Groq credential",
+        "- Trial activation history and daily usage totals",
         "",
         "Discord channels and roles themselves are not deleted.",
       ].join("\n"),
@@ -71,34 +43,29 @@ module.exports = {
       flags: EPHEMERAL,
     });
   },
-
   buttonHandlers: [
     {
       customIdPrefix: CONFIRM_PREFIX,
       async execute(interaction) {
         const ownerUserId = interaction.customId.slice(CONFIRM_PREFIX.length);
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
-        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
+        await interaction.deferUpdate();
         const guildId = interaction.guild.id;
-        const [usageLogs, ticketChannels, learnedAnswers, adminRoutes, guildSettings, guildConfigs] =
-          await prisma.$transaction([
-            prisma.aiUsageLog.deleteMany({ where: { guildId } }),
-            prisma.ticketChannel.deleteMany({ where: { guildId } }),
-            prisma.learnedAnswer.deleteMany({ where: { guildId } }),
-            prisma.adminRoute.deleteMany({ where: { guildId } }),
-            prisma.guildSetting.deleteMany({ where: { guildId } }),
-            prisma.guildConfig.deleteMany({ where: { guildId } }),
-          ]);
-
-        const totalDeleted = usageLogs.count + ticketChannels.count + learnedAnswers.count +
-          adminRoutes.count + guildSettings.count + guildConfigs.count;
-
+        const results = await prisma.$transaction([
+          prisma.guildDailyAiUsage.deleteMany({ where: { guildId } }),
+          prisma.aiUsageLog.deleteMany({ where: { guildId } }),
+          prisma.ticketChannel.deleteMany({ where: { guildId } }),
+          prisma.learnedAnswer.deleteMany({ where: { guildId } }),
+          prisma.adminRoute.deleteMany({ where: { guildId } }),
+          prisma.guildSetting.deleteMany({ where: { guildId } }),
+          prisma.guildConfig.deleteMany({ where: { guildId } }),
+        ]);
+        const totalDeleted = results.reduce((sum, result) => sum + result.count, 0);
         await interaction.editReply({
           content: [
             "Done. All Pixy database data for this server has been deleted.",
             `Deleted records: **${totalDeleted}**`,
-            "The encrypted Groq credential was removed. Run `/pixy-setup` and `/pixy-settings` to configure the server again.",
+            "The Groq credential, trial history, and usage totals were removed. Run /pixy-setup to configure the server again.",
           ].join("\n"),
           components: [],
         });
@@ -109,7 +76,7 @@ module.exports = {
       async execute(interaction) {
         const ownerUserId = interaction.customId.slice(CANCEL_PREFIX.length);
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
-        await createResponder(interaction)({ content: "Cancelled. No Pixy data was deleted.", components: [] });
+        await interaction.update({ content: "Cancelled. No Pixy data was deleted.", components: [] });
       },
     },
   ],
