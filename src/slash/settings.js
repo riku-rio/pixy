@@ -19,7 +19,7 @@ const configurationPanel = require("../components/guildConfigurationPanel");
 
 const EPHEMERAL = 64;
 const PREFIX = {
-  HOME: "settings_home:", NAV: "settings_nav:", TOGGLE: "settings_toggle:", CLOSE: "settings_close:",
+  HOME: "settings_home:", BACK: "settings_back:", NAV: "settings_nav:", TOGGLE: "settings_toggle:", CLOSE: "settings_close:",
   BADWORD_ACTION: "settings_badwords_action:", BADWORD_REMOVE: "settings_badwords_remove:", BADWORD_MODAL: "settings_badwords_modal:",
 };
 const PAGES = { HOME: "home", FEATURES: "features", ESCALATION: "escalation", AIAPI: "aiapi", BADWORDS: "badwords", PLANS: "plans" };
@@ -36,7 +36,7 @@ async function assertOwner(interaction, userId) {
 function nav(userId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(scoped(PREFIX.HOME, userId)).setLabel("Home").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(scoped(PREFIX.HOME, userId)).setLabel("Back").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(scoped(PREFIX.BACK, userId)).setLabel("Back").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(scoped(PREFIX.CLOSE, userId)).setLabel("Close").setStyle(ButtonStyle.Secondary)
   );
 }
@@ -98,10 +98,15 @@ function badwordComponents(userId) {
 async function render(page, guildId, userId) {
   if (page === PAGES.AIAPI) return configurationPanel.renderAiApi(guildId, userId, "settings");
   if (page === PAGES.PLANS) return configurationPanel.renderPlans(guildId, userId, "settings");
-  if (page === PAGES.FEATURES) return { embeds: [await features(guildId)], components: featureComponents(userId) };
-  if (page === PAGES.ESCALATION) return { embeds: [await escalation(guildId)], components: [nav(userId)] };
-  if (page === PAGES.BADWORDS) return { embeds: [await badwords(guildId)], components: badwordComponents(userId) };
-  return { embeds: [await home(guildId)], components: homeComponents(userId) };
+  if (page === PAGES.FEATURES) return { content: null, embeds: [await features(guildId)], components: featureComponents(userId) };
+  if (page === PAGES.ESCALATION) return { content: null, embeds: [await escalation(guildId)], components: [nav(userId)] };
+  if (page === PAGES.BADWORDS) return { content: null, embeds: [await badwords(guildId)], components: badwordComponents(userId) };
+  return { content: null, embeds: [await home(guildId)], components: homeComponents(userId) };
+}
+
+async function returnHome(interaction, userId) {
+  if (!(await assertOwner(interaction, userId))) return;
+  await interaction.update(await render(PAGES.HOME, interaction.guild.id, userId));
 }
 
 module.exports = {
@@ -115,9 +120,11 @@ module.exports = {
     { customIdPrefix: PREFIX.BADWORD_REMOVE, type: "string", async execute(interaction) { const userId = interaction.customId.slice(PREFIX.BADWORD_REMOVE.length); if (!(await assertOwner(interaction, userId))) return; await removeCustomBadWord(interaction.guild.id, interaction.values[0]); await interaction.update(await render(PAGES.BADWORDS, interaction.guild.id, userId)); } },
   ],
   buttonHandlers: [
-    { customIdPrefix: PREFIX.HOME, async execute(interaction) { const userId = interaction.customId.slice(PREFIX.HOME.length); if (!(await assertOwner(interaction, userId))) return; await interaction.update(await render(PAGES.HOME, interaction.guild.id, userId)); } },
+    { customIdPrefix: PREFIX.HOME, async execute(interaction) { returnHome(interaction, interaction.customId.slice(PREFIX.HOME.length)); } },
+    { customIdPrefix: PREFIX.BACK, async execute(interaction) { returnHome(interaction, interaction.customId.slice(PREFIX.BACK.length)); } },
     { customIdPrefix: PREFIX.CLOSE, async execute(interaction) { const userId = interaction.customId.slice(PREFIX.CLOSE.length); if (!(await assertOwner(interaction, userId))) return; await interaction.update({ content: "Settings panel closed.", embeds: [], components: [] }); } },
-    { customIdPrefix: "guild_config:settings:home:", async execute(interaction) { const userId = interaction.customId.split(":")[3]; if (!(await assertOwner(interaction, userId))) return; await interaction.update(await render(PAGES.HOME, interaction.guild.id, userId)); } },
+    { customIdPrefix: "guild_config:settings:home:", async execute(interaction) { returnHome(interaction, interaction.customId.split(":")[3]); } },
+    { customIdPrefix: "guild_config:settings:back:", async execute(interaction) { returnHome(interaction, interaction.customId.split(":")[3]); } },
   ],
   modalHandlers: [{ customIdPrefix: PREFIX.BADWORD_MODAL, async execute(interaction) { const userId = interaction.customId.slice(PREFIX.BADWORD_MODAL.length); if (!(await assertOwner(interaction, userId))) return; const result = await addCustomBadWord(interaction.guild.id, interaction.fields.getTextInputValue("word").trim()); await interaction.reply({ content: result.ok ? "Custom word added." : `Could not add that word: ${result.code}.`, ...(await render(PAGES.BADWORDS, interaction.guild.id, userId)), flags: EPHEMERAL }); } }],
 };
