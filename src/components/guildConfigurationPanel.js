@@ -78,8 +78,10 @@ async function renderAiApi(guildId, userId, mode = "settings") {
 }
 
 async function renderPlans(guildId, userId, mode = "settings") {
-  const usage = await getGuildDailyUsage(guildId);
-  const config = await getGuildAiConfig(guildId);
+  const [usage, config] = await Promise.all([
+    getGuildDailyUsage(guildId),
+    getGuildAiConfig(guildId),
+  ]);
   const active = usage.state === PLAN_STATES.TRIAL_ACTIVE;
   const expired = usage.state === PLAN_STATES.FREE_TRIAL_EXPIRED;
   const fields = [
@@ -116,9 +118,11 @@ async function renderPlans(guildId, userId, mode = "settings") {
 }
 
 async function renderComplete(guildId, userId) {
-  const config = await getGuildAiConfig(guildId);
-  const usage = await getGuildDailyUsage(guildId);
-  const guildConfig = await prisma.guildConfig.findUnique({ where: { guildId } });
+  const [config, usage, guildConfig] = await Promise.all([
+    getGuildAiConfig(guildId),
+    getGuildDailyUsage(guildId),
+    prisma.guildConfig.findUnique({ where: { guildId } }),
+  ]);
   return {
     content: null,
     embeds: [new EmbedBuilder().setTitle("✅ Pixy Setup Complete").setColor(0x57f287).addFields(
@@ -177,23 +181,29 @@ const buttonHandlers = [{
     if (!(await assertOwner(interaction, info.userId))) return;
     if (info.action === "api_set") return interaction.showModal(apiModal(info.mode, info.userId));
     if (info.action === "model_set") return interaction.showModal(modelModal(info.mode, info.userId));
+    if (info.action === "close") return interaction.update({ content: "Settings panel closed.", embeds: [], components: [] });
+
+    await interaction.deferUpdate();
+
     if (info.action === "api_remove") {
       await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { groqApiKeyEncrypted: null, aiModel: null } });
-      return interaction.update(await render(PAGES.AIAPI, interaction.guild.id, info.userId, info.mode));
+      return interaction.editReply(await render(PAGES.AIAPI, interaction.guild.id, info.userId, info.mode));
     }
     if (info.action === "model_reset") {
       await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { aiModel: null } });
-      return interaction.update(await render(PAGES.AIAPI, interaction.guild.id, info.userId, info.mode));
+      return interaction.editReply(await render(PAGES.AIAPI, interaction.guild.id, info.userId, info.mode));
     }
     if (info.action === "trial_confirm") {
-      await interaction.deferUpdate();
       const result = await activateGuildTrial(interaction.guild.id);
       const content = result.ok ? "The 7-day free trial is now active." : `The trial could not be activated: ${result.code}.`;
       return interaction.editReply({ ...(await render(PAGES.PLANS, interaction.guild.id, info.userId, info.mode)), content });
     }
-    if (info.action === "trial_cancel") return interaction.update(await render(PAGES.PLANS, interaction.guild.id, info.userId, info.mode));
-    if (info.action === "nav") return interaction.update(await render(info.extra, interaction.guild.id, info.userId, info.mode));
-    if (info.action === "close") return interaction.update({ content: "Settings panel closed.", embeds: [], components: [] });
+    if (info.action === "trial_cancel") {
+      return interaction.editReply(await render(PAGES.PLANS, interaction.guild.id, info.userId, info.mode));
+    }
+    if (info.action === "nav") {
+      return interaction.editReply(await render(info.extra, interaction.guild.id, info.userId, info.mode));
+    }
   },
 }];
 
