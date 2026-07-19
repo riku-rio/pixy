@@ -58,9 +58,9 @@ async function saveCategory(guildId, categoryId) {
   });
 }
 async function createOrFind(guild) {
-  await guild.channels.fetch().catch(() => null);
   const existing = guild.channels.cache.find((channel) => channel.type === ChannelType.GuildCategory && AUTO_NAMES.includes(String(channel.name).toLowerCase()));
   if (existing) return existing;
+
   const member = guild.members.me || await guild.members.fetchMe().catch(() => null);
   if (!member?.permissions.has(PermissionFlagsBits.ManageChannels)) return null;
   return guild.channels.create({ name: AUTO_NAMES[0], type: ChannelType.GuildCategory, reason: "Pixy AI ticket category setup" });
@@ -71,8 +71,9 @@ module.exports = {
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
   async execute(interaction) {
+    await interaction.deferReply({ flags: EPHEMERAL });
     const category = await currentCategory(interaction.guild);
-    await interaction.reply({ ...categoryPayload(interaction.user.id, category), flags: EPHEMERAL });
+    await interaction.editReply(categoryPayload(interaction.user.id, category));
   },
   buttonHandlers: [
     {
@@ -103,12 +104,13 @@ module.exports = {
       async execute(interaction) {
         const [userId, page] = interaction.customId.slice(SETUP_NAV.length).split(":");
         if (!(await assertOwner(interaction, userId))) return;
+        await interaction.deferUpdate();
         if (page === "category") {
           const category = await currentCategory(interaction.guild);
-          await interaction.update(categoryPayload(userId, category));
+          await interaction.editReply(categoryPayload(userId, category));
           return;
         }
-        await interaction.update(await configurationPanel.render(page, interaction.guild.id, userId, "setup"));
+        await interaction.editReply(await configurationPanel.render(page, interaction.guild.id, userId, "setup"));
       },
     },
   ],
@@ -118,14 +120,15 @@ module.exports = {
     async execute(interaction) {
       const userId = interaction.customId.slice(CATEGORY_SELECT.length);
       if (!(await assertOwner(interaction, userId))) return;
+      await interaction.deferUpdate();
       const categoryId = interaction.values?.[0];
       const category = interaction.guild.channels.cache.get(categoryId) || await interaction.guild.channels.fetch(categoryId).catch(() => null);
       if (!category || category.type !== ChannelType.GuildCategory) {
-        await interaction.update({ content: "Invalid category selected.", embeds: [], components: [] });
+        await interaction.editReply({ content: "Invalid category selected.", embeds: [], components: [] });
         return;
       }
       await saveCategory(interaction.guild.id, category.id);
-      await interaction.update({ content: `Ticket category saved as **${category.name}**.`, ...(await configurationPanel.renderAiApi(interaction.guild.id, userId, "setup")) });
+      await interaction.editReply({ content: `Ticket category saved as **${category.name}**.`, ...(await configurationPanel.renderAiApi(interaction.guild.id, userId, "setup")) });
     },
   }],
 };
