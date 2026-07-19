@@ -143,7 +143,7 @@ function homeComponents(userId) {
         label: "Bad Words",
         description: "Manage custom words blocked during rename review",
         value: PAGES.BADWORDS,
-        emoji: "🚫",
+        emoji: "🛡️",
       },
       {
         label: "Plans & Usage",
@@ -229,8 +229,9 @@ async function escalation(guildId) {
 async function badwords(guildId) {
   const stats = await getBadWordsStats(guildId);
   const embed = new EmbedBuilder()
-    .setTitle("🚫 Bad Words Settings")
-    .setColor(0xeb459e)
+    .setTitle("🛡️ Bad Words Settings")
+    .setColor(0xed4245)
+    .setDescription("Manage the words Pixy blocks during ticket rename review.")
     .addFields(
       { name: "Built-in", value: String(stats.builtInCount), inline: true },
       { name: "Custom", value: `${stats.customCount}/${stats.maxCustom}`, inline: true }
@@ -255,13 +256,13 @@ function badwordComponents(userId) {
         label: "Add Custom Word",
         description: "Add a word to this server's custom blocked list",
         value: "add",
-        emoji: "➕",
+        emoji: "🟢",
       },
       {
         label: "Remove Custom Word",
         description: "Remove a word from this server's custom blocked list",
         value: "remove",
-        emoji: "➖",
+        emoji: "🗑️",
       }
     );
 
