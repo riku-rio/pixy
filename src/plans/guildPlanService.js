@@ -1,4 +1,5 @@
 const { prisma } = require("../config/prisma");
+const { getOrCreateGuildSetting } = require("../config/ai");
 const {
   DAY_MS,
   PLAN_STATES,
@@ -44,21 +45,13 @@ function getPlanStatusFromSetting(setting, now = new Date()) {
 }
 
 async function getGuildPlanStatus(guildId, now = new Date()) {
-  const setting = await prisma.guildSetting.upsert({
-    where: { guildId },
-    update: {},
-    create: { guildId },
-  });
+  const setting = await getOrCreateGuildSetting(guildId);
   return getPlanStatusFromSetting(setting, now);
 }
 
 async function activateGuildTrial(guildId, now = new Date()) {
   const current = now instanceof Date ? now : new Date(now);
-  const setting = await prisma.guildSetting.upsert({
-    where: { guildId },
-    update: {},
-    create: { guildId },
-  });
+  const setting = await getOrCreateGuildSetting(guildId);
 
   if (!setting.groqApiKeyEncrypted) {
     return { ok: false, code: "missing_groq_api_key" };
