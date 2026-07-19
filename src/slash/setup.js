@@ -7,387 +7,128 @@ const {
   ChannelSelectMenuBuilder,
   ChannelType,
 } = require("discord.js");
-
 const { prisma } = require("../config/prisma");
+const configurationPanel = require("../components/guildConfigurationPanel");
 
 const EPHEMERAL = 64;
+const SELECT_EXISTING = "setup_select_category_existing:";
+const CREATE_AUTO = "setup_create_category_auto:";
+const CATEGORY_SELECT = "setup_category_select:";
+const SETUP_NAV = "guild_config:setup:nav:";
+const AUTO_NAMES = ["pixy-tickets", "pixy-support-tickets", "pixy-help-tickets"];
 
-const SELECT_EXISTING_BUTTON_PREFIX = "setup_select_category_existing:";
-const CREATE_AUTO_BUTTON_PREFIX = "setup_create_category_auto:";
-const CATEGORY_SELECT_PREFIX = "setup_category_select:";
-
-const AUTO_CATEGORY_NAMES = [
-  "pixy-tickets",
-  "pixy-support-tickets",
-  "pixy-help-tickets",
-];
-
-async function getBotMember(guild) {
-  if (!guild) return null;
-
-  if (guild.members?.me) {
-    return guild.members.me;
+async function assertOwner(interaction, userId) {
+  if (!interaction.guild || interaction.user.id !== userId || !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    await interaction.reply({ content: "Only the administrator who opened /pixy-setup can use this control.", flags: EPHEMERAL });
+    return false;
   }
-
-  try {
-    return await guild.members.fetchMe();
-  } catch {
-    return null;
-  }
+  return true;
 }
-
-async function botCanManageGuildChannels(guild) {
-  const botMember = await getBotMember(guild);
-
-  if (!botMember) return false;
-
-  return botMember.permissions.has(PermissionFlagsBits.ManageChannels);
+async function currentCategory(guild) {
+  const config = await prisma.guildConfig.findUnique({ where: { guildId: guild.id } });
+  if (!config?.ticketCategoryId) return null;
+  const cached = guild.channels.cache.get(config.ticketCategoryId);
+  if (cached?.type === ChannelType.GuildCategory) return cached;
+  return guild.channels.fetch(config.ticketCategoryId).catch(() => null);
 }
-
-async function createOrFindAutoCategory(guild) {
-  await guild.channels.fetch().catch(() => null);
-
-  const categories = guild.channels.cache.filter((channel) => {
-    return channel.type === ChannelType.GuildCategory;
+function categoryPayload(userId, category) {
+  const lines = [category ? `Current ticket category: **${category.name}**` : "Ticket category is not configured yet.", "", "Choose where Pixy should create ticket channels:"];
+  return {
+    content: lines.join("\n"), embeds: [],
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`${SELECT_EXISTING}${userId}`).setLabel("Select existing category").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`${CREATE_AUTO}${userId}`).setLabel("Create automatically").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`${SETUP_NAV}${userId}:aiapi`).setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(!category)
+    )],
+  };
+}
+function categorySelectPayload(userId) {
+  return {
+    content: "Choose the category where ticket channels are created:", embeds: [],
+    components: [new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder().setCustomId(`${CATEGORY_SELECT}${userId}`).setPlaceholder("Select the ticket category").setChannelTypes(ChannelType.GuildCategory)
+    )],
+  };
+}
+async function saveCategory(guildId, categoryId) {
+  return prisma.guildConfig.upsert({
+    where: { guildId },
+    create: { guildId, ticketCategoryId: categoryId, enabled: true, maxLearnedItems: 20 },
+    update: { ticketCategoryId: categoryId, enabled: true },
   });
-
-  function findByName(name) {
-    const wanted = String(name || "").toLowerCase();
-
-    return categories.find((category) => {
-      return String(category.name || "").toLowerCase() === wanted;
-    });
-  }
-
-  const existingCategory = AUTO_CATEGORY_NAMES
-    .map((name) => findByName(name))
-    .find(Boolean);
-
-  if (existingCategory) {
-    return {
-      category: existingCategory,
-      created: false,
-    };
-  }
-
-  const category = await guild.channels.create({
-    name: AUTO_CATEGORY_NAMES[0],
-    type: ChannelType.GuildCategory,
-    reason: "Pixy AI ticket category setup",
-  });
-
-  return {
-    category,
-    created: true,
-  };
 }
+async function createOrFind(guild) {
+  const existing = guild.channels.cache.find((channel) => channel.type === ChannelType.GuildCategory && AUTO_NAMES.includes(String(channel.name).toLowerCase()));
+  if (existing) return existing;
 
-function parseOwnerUserId(customId, prefix) {
-  return String(customId || "").slice(prefix.length);
-}
-
-// Helper to respond to deferred interactions safely
-function createResponder(interaction) {
-  return (payload) => {
-    if (interaction.deferred || interaction.replied) {
-      return interaction.editReply(payload);
-    }
-    return interaction.update(payload);
-  };
-}
-
-function buildCategoryChoicePayload({ ownerUserId, currentCategory }) {
-  const selectExistingButton = new ButtonBuilder()
-    .setCustomId(`${SELECT_EXISTING_BUTTON_PREFIX}${ownerUserId}`)
-    .setLabel("Select existing category")
-    .setStyle(ButtonStyle.Primary);
-
-  const createAutoButton = new ButtonBuilder()
-    .setCustomId(`${CREATE_AUTO_BUTTON_PREFIX}${ownerUserId}`)
-    .setLabel("Create automatically")
-    .setStyle(ButtonStyle.Secondary);
-
-  const row = new ActionRowBuilder().addComponents(
-    selectExistingButton,
-    createAutoButton
-  );
-
-  const lines = [];
-
-  if (currentCategory) {
-    lines.push(`Current ticket category: **${currentCategory.name}**`);
-    lines.push("");
-  } else {
-    lines.push("Ticket category is not configured yet.");
-    lines.push("");
-  }
-
-  lines.push("Choose where Pixy should create ticket channels:");
-
-  return {
-    content: lines.join("\n"),
-    components: [row],
-  };
-}
-
-function buildCategorySelectPayload({ ownerUserId }) {
-  const selectMenu = new ChannelSelectMenuBuilder()
-    .setCustomId(`${CATEGORY_SELECT_PREFIX}${ownerUserId}`)
-    .setPlaceholder("Select the ticket category")
-    .setMinValues(1)
-    .setMaxValues(1)
-    .setChannelTypes(ChannelType.GuildCategory);
-
-  const row = new ActionRowBuilder().addComponents(selectMenu);
-
-  return {
-    content: "Choose the category where ticket channels are created:",
-    components: [row],
-  };
+  const member = guild.members.me || await guild.members.fetchMe().catch(() => null);
+  if (!member?.permissions.has(PermissionFlagsBits.ManageChannels)) return null;
+  return guild.channels.create({ name: AUTO_NAMES[0], type: ChannelType.GuildCategory, reason: "Pixy AI ticket category setup" });
 }
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("setup")
-    .setDescription("Setup Pixy AI ticket category.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
+  data: new SlashCommandBuilder().setName("setup").setDescription("Setup Pixy AI for this server.").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
-
   async execute(interaction) {
-    if (!interaction.guild) {
-      await interaction.reply({
-        content: "This command can only be used inside a server.",
-        flags: EPHEMERAL,
-      });
-      return;
-    }
-
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-      await interaction.reply({
-        content: "You need Administrator permission to use this command.",
-        flags: EPHEMERAL,
-      });
-      return;
-    }
-
-    const config = await prisma.guildConfig.findUnique({
-      where: { guildId: interaction.guild.id },
-    });
-
-    let currentCategory = null;
-
-    if (config?.ticketCategoryId) {
-      const cached = interaction.guild.channels.cache.get(config.ticketCategoryId);
-
-      if (cached?.type === ChannelType.GuildCategory) {
-        currentCategory = cached;
-      }
-    }
-
-    await interaction.reply({
-      ...buildCategoryChoicePayload({
-        ownerUserId: interaction.user.id,
-        currentCategory,
-      }),
-      flags: EPHEMERAL,
-    });
+    await interaction.deferReply({ flags: EPHEMERAL });
+    const category = await currentCategory(interaction.guild);
+    await interaction.editReply(categoryPayload(interaction.user.id, category));
   },
-
   buttonHandlers: [
     {
-      customIdPrefix: SELECT_EXISTING_BUTTON_PREFIX,
-
+      customIdPrefix: SELECT_EXISTING,
       async execute(interaction) {
-        const ownerUserId = parseOwnerUserId(
-          interaction.customId,
-          SELECT_EXISTING_BUTTON_PREFIX
-        );
-
-        if (!interaction.guild) {
-          await interaction.update({
-            content: "This can only be used inside a server.",
-            components: [],
-          });
-          return;
-        }
-
-        if (interaction.user.id !== ownerUserId) {
-          await interaction.reply({
-            content: "Only the admin who used `/pixy-setup` can use this interaction.",
-            flags: EPHEMERAL,
-          });
-          return;
-        }
-
-        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-          await interaction.reply({
-            content: "You need Administrator permission to do this.",
-            flags: EPHEMERAL,
-          });
-          return;
-        }
-
-        const respond = createResponder(interaction);
-        await respond(
-          buildCategorySelectPayload({ ownerUserId })
-        );
+        const userId = interaction.customId.slice(SELECT_EXISTING.length);
+        if (!(await assertOwner(interaction, userId))) return;
+        await interaction.update(categorySelectPayload(userId));
       },
     },
     {
-      customIdPrefix: CREATE_AUTO_BUTTON_PREFIX,
-
+      customIdPrefix: CREATE_AUTO,
       async execute(interaction) {
-        const ownerUserId = parseOwnerUserId(
-          interaction.customId,
-          CREATE_AUTO_BUTTON_PREFIX
-        );
-
-        if (!interaction.guild) {
-          await interaction.update({
-            content: "This can only be used inside a server.",
-            components: [],
-          });
+        const userId = interaction.customId.slice(CREATE_AUTO.length);
+        if (!(await assertOwner(interaction, userId))) return;
+        await interaction.deferUpdate();
+        const category = await createOrFind(interaction.guild);
+        if (!category) {
+          await interaction.editReply({ content: "I need Manage Channels permission to create the ticket category automatically.", embeds: [], components: [] });
           return;
         }
-
-        if (interaction.user.id !== ownerUserId) {
-          await interaction.reply({
-            content: "Only the admin who used `/pixy-setup` can use this interaction.",
-            flags: EPHEMERAL,
-          });
-          return;
-        }
-
-        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-          await interaction.reply({
-            content: "You need Administrator permission to do this.",
-            flags: EPHEMERAL,
-          });
-          return;
-        }
-
-        const respond = createResponder(interaction);
-
-        const canManageChannels = await botCanManageGuildChannels(
-          interaction.guild
-        );
-
-        if (!canManageChannels) {
-          await respond({
-            content:
-              "I need **Manage Channels** permission to create the ticket category automatically.",
-            components: [],
-          });
-          return;
-        }
-
-        const result = await createOrFindAutoCategory(interaction.guild);
-
-        if (!result.category) {
-          await respond({
-            content:
-              "I could not create or find a ticket category. Please choose an existing category instead.",
-            components: [],
-          });
-          return;
-        }
-
-        await prisma.guildConfig.upsert({
-          where: {
-            guildId: interaction.guild.id,
-          },
-          create: {
-            guildId: interaction.guild.id,
-            ticketCategoryId: result.category.id,
-            enabled: true,
-            maxLearnedItems: 20,
-          },
-          update: {
-            ticketCategoryId: result.category.id,
-            enabled: true,
-          },
-        });
-
-        const verb = result.created ? "created and saved" : "saved";
-
-        await respond({
-          content: `Done. Ticket category has been ${verb} as **${result.category.name}**.`,
-          components: [],
-        });
+        await saveCategory(interaction.guild.id, category.id);
+        await interaction.editReply({ content: `Ticket category saved as **${category.name}**.`, ...(await configurationPanel.renderAiApi(interaction.guild.id, userId, "setup")) });
       },
     },
-  ],
-
-  selectMenuHandlers: [
     {
-      customIdPrefix: CATEGORY_SELECT_PREFIX,
-
+      customIdPrefix: SETUP_NAV,
       async execute(interaction) {
-        const ownerUserId = parseOwnerUserId(
-          interaction.customId,
-          CATEGORY_SELECT_PREFIX
-        );
-
-        if (!interaction.guild) {
-          await interaction.update({
-            content: "This can only be used inside a server.",
-            components: [],
-          });
+        const [userId, page] = interaction.customId.slice(SETUP_NAV.length).split(":");
+        if (!(await assertOwner(interaction, userId))) return;
+        await interaction.deferUpdate();
+        if (page === "category") {
+          const category = await currentCategory(interaction.guild);
+          await interaction.editReply(categoryPayload(userId, category));
           return;
         }
-
-        if (interaction.user.id !== ownerUserId) {
-          await interaction.reply({
-            content: "Only the admin who used `/pixy-setup` can choose this category.",
-            flags: EPHEMERAL,
-          });
-          return;
-        }
-
-        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-          await interaction.reply({
-            content: "You need Administrator permission to do this.",
-            flags: EPHEMERAL,
-          });
-          return;
-        }
-
-        const respond = createResponder(interaction);
-        const categoryId = interaction.values[0];
-        const category = interaction.guild.channels.cache.get(categoryId);
-
-        if (!category || category.type !== ChannelType.GuildCategory) {
-          await respond({
-            content: "Invalid category selected.",
-            components: [],
-          });
-          return;
-        }
-
-        await prisma.guildConfig.upsert({
-          where: {
-            guildId: interaction.guild.id,
-          },
-          create: {
-            guildId: interaction.guild.id,
-            ticketCategoryId: category.id,
-            enabled: true,
-            maxLearnedItems: 20,
-          },
-          update: {
-            ticketCategoryId: category.id,
-            enabled: true,
-          },
-        });
-
-        await respond({
-          content: `Done. Pixy AI ticket category has been saved as **${category.name}**.`,
-          components: [],
-        });
+        await interaction.editReply(await configurationPanel.render(page, interaction.guild.id, userId, "setup"));
       },
     },
   ],
+  selectMenuHandlers: [{
+    customIdPrefix: CATEGORY_SELECT,
+    type: "channel",
+    async execute(interaction) {
+      const userId = interaction.customId.slice(CATEGORY_SELECT.length);
+      if (!(await assertOwner(interaction, userId))) return;
+      await interaction.deferUpdate();
+      const categoryId = interaction.values?.[0];
+      const category = interaction.guild.channels.cache.get(categoryId) || await interaction.guild.channels.fetch(categoryId).catch(() => null);
+      if (!category || category.type !== ChannelType.GuildCategory) {
+        await interaction.editReply({ content: "Invalid category selected.", embeds: [], components: [] });
+        return;
+      }
+      await saveCategory(interaction.guild.id, category.id);
+      await interaction.editReply({ content: `Ticket category saved as **${category.name}**.`, ...(await configurationPanel.renderAiApi(interaction.guild.id, userId, "setup")) });
+    },
+  }],
 };
-

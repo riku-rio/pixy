@@ -7,101 +7,77 @@ datasource db {
 }
 
 model GuildConfig {
-  id               String   @id @default(cuid())
-  guildId          String   @unique
+  id String @id @default(cuid())
+  guildId String @unique
   ticketCategoryId String?
-  enabled          Boolean  @default(true)
-  maxLearnedItems  Int      @default(20)
-
-  escalationCategoryId            String?
+  enabled Boolean @default(true)
+  maxLearnedItems Int @default(20)
+  escalationCategoryId String?
   escalationNotificationChannelId String?
-  maxAdminRoutes                  Int      @default(10)
-
+  maxAdminRoutes Int @default(10)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   learnedAnswers LearnedAnswer[]
   ticketChannels TicketChannel[]
-  adminRoutes    AdminRoute[]
-
-  // Legacy fields retained for migration compatibility. New AI settings live in GuildSetting.
-  aiEnabled       Boolean @default(true)
-  aiProvider      String  @default("groq")
-  aiModel         String?
-  aiSystemPrompt  String?
+  adminRoutes AdminRoute[]
+  aiEnabled Boolean @default(true)
+  aiProvider String @default("groq")
+  aiModel String?
+  aiSystemPrompt String?
 }
 
 model LearnedAnswer {
-  id      String @id @default(cuid())
+  id String @id @default(cuid())
   guildId String
-
-  type String @default("qna") // qna | freeform
-
+  type String @default("qna")
   question String?
-  answer   String?
-
-  title   String?
+  answer String?
+  title String?
   content String?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   guild GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-
   @@index([guildId])
   @@index([guildId, type])
 }
 
 model AdminRoute {
-  id          String @id @default(cuid())
-  guildId     String
-  roleId      String
+  id String @id @default(cuid())
+  guildId String
+  roleId String
   description String
-
   enabled Boolean @default(true)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   guild GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-
   @@unique([guildId, roleId])
   @@index([guildId])
   @@index([guildId, enabled])
 }
 
 model TicketChannel {
-  id        String  @id @default(cuid())
-  guildId   String
-  channelId String  @unique
-  userId    String?
-
+  id String @id @default(cuid())
+  guildId String
+  channelId String @unique
+  userId String?
   closed Boolean @default(false)
-  status String  @default("open") // open | closed
-
+  status String @default("open")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  aiEnabled         Boolean   @default(true)
-  lastAiReplyAt     DateTime?
+  aiEnabled Boolean @default(true)
+  lastAiReplyAt DateTime?
   lastUserMessageAt DateTime?
-
-  closedByAi Boolean   @default(false)
-  closedAt   DateTime?
-
+  closedByAi Boolean @default(false)
+  closedAt DateTime?
   renamedByAiAt DateTime?
-  lastAiAction  String?
+  lastAiAction String?
   lastAiActionAt DateTime?
-
-  escalated        Boolean   @default(false)
-  escalatedAt      DateTime?
-  escalatedRoleId  String?
+  escalated Boolean @default(false)
+  escalatedAt DateTime?
+  escalatedRoleId String?
   escalationReason String?
-
   escalationNotificationMessageId String?
-
   guild GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-
   @@index([guildId])
   @@index([guildId, status])
   @@index([guildId, escalated])
@@ -109,46 +85,45 @@ model TicketChannel {
 
 model AiUsageLog {
   id String @id @default(cuid())
-
-  guildId   String
+  guildId String
   channelId String
-  userId    String?
-
+  userId String?
   provider String
-  model    String?
-
-  promptTokens     Int?
+  model String?
+  promptTokens Int?
   completionTokens Int?
-  totalTokens      Int?
-
+  totalTokens Int?
   status String
-  error  String?
-
+  error String?
   createdAt DateTime @default(now())
 }
 
+model GuildDailyAiUsage {
+  id String @id @default(cuid())
+  guildId String
+  dayKey String
+  acceptedRequests Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([guildId, dayKey])
+  @@index([guildId])
+}
+
 model GuildSetting {
-  id      String @id @default(cuid())
+  id String @id @default(cuid())
   guildId String @unique
-
-  // Features
-  aiReplyEnabled      Boolean @default(true)
-  closeTicketEnabled  Boolean @default(true)
+  aiReplyEnabled Boolean @default(true)
+  closeTicketEnabled Boolean @default(true)
   renameReviewEnabled Boolean @default(true)
-  escalationEnabled   Boolean @default(true)
+  escalationEnabled Boolean @default(true)
   agentActionsEnabled Boolean @default(true)
-
-  // AI API. The credential is an AES-256-GCM envelope, never plaintext.
   groqApiKeyEncrypted String?
-  aiModel             String? // null = use "openai/gpt-oss-120b"
-
-  // Bad Words
-  customBadWords String @default("[]") // JSON array, max 100 entries
-
-  // Reserved for future plans. No trial or billing behavior is implemented.
-  plan          String    @default("free")
+  aiModel String?
+  customBadWords String @default("[]")
+  plan String @default("free")
   planExpiresAt DateTime?
-
+  trialStartedAt DateTime?
+  trialEndsAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

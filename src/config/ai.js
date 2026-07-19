@@ -25,8 +25,6 @@ const defaultAiConfig = Object.freeze({
   renameBlockedWords: ["fuck", "fucking", "fuk", "shit", "bitch", "nigga"],
 });
 
-// Synchronous application defaults retained for non-guild utility code.
-// Guild AI requests must use getGuildAiConfig().
 const aiConfig = {
   ...defaultAiConfig,
   groq: {
@@ -41,11 +39,21 @@ async function getOrCreateGuildSetting(guildId) {
     throw new Error("A guild ID is required to load Pixy settings.");
   }
 
-  return prisma.guildSetting.upsert({
+  const existing = await prisma.guildSetting.findUnique({
     where: { guildId: normalizedGuildId },
-    update: {},
-    create: { guildId: normalizedGuildId },
   });
+  if (existing) return existing;
+
+  try {
+    return await prisma.guildSetting.create({
+      data: { guildId: normalizedGuildId },
+    });
+  } catch (error) {
+    if (error?.code !== "P2002") throw error;
+    return prisma.guildSetting.findUniqueOrThrow({
+      where: { guildId: normalizedGuildId },
+    });
+  }
 }
 
 async function getGuildAiConfig(guildId, { requireApiKey = false } = {}) {
