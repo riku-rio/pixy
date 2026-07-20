@@ -11,7 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:seed": "node prisma/seed-blocked-terms.js",
+    "prisma:seed": "node prisma/seed-mysql.js",
     "pretest": "prisma generate",
     "test": "node --test"
   },
