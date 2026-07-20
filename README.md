@@ -28,6 +28,10 @@ This repository intentionally has no payments, subscriptions, free trials, plan 
 
 ## Commands
 
+### `/pixy-help`
+
+Open an interactive help center with Quick Start, Groq API Key, Features, Commands, and Troubleshooting pages. The Groq page links directly to the official API Keys and Quickstart pages.
+
 ### `/pixy-setup`
 
 Configure the ticket category for the current server.
