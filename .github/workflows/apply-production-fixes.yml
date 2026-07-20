@@ -1,0 +1,73 @@
+name: Apply production fixes
+
+on:
+  push:
+    branches:
+      - fix/production-readiness-mysql-safety
+    paths:
+      - .github/workflows/apply-production-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: pixy_test
+          MYSQL_USER: pixy
+          MYSQL_PASSWORD: pixy_test_password
+          MYSQL_ROOT_PASSWORD: root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://pixy:pixy_test_password@127.0.0.1:3306/pixy_test
+      TEST_DATABASE_URL: mysql://pixy:pixy_test_password@127.0.0.1:3306/pixy_test
+      PIXY_CREDENTIAL_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/production-readiness-mysql-safety
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Apply code changes
+        shell: pwsh
+        run: ./.github/scripts/apply-production-fixes.ps1
+      - name: Install dependencies
+        shell: pwsh
+        run: npm install --ignore-scripts
+      - name: Generate Prisma client
+        shell: pwsh
+        run: npm run prisma:generate
+      - name: Validate schema
+        shell: pwsh
+        run: npx prisma validate
+      - name: Run tests
+        shell: pwsh
+        run: npm test
+      - name: Remove one-time automation
+        if: success()
+        shell: pwsh
+        run: |
+          Remove-Item .github/scripts/apply-production-fixes.ps1 -Force
+          Remove-Item .github/workflows/apply-production-fixes.yml -Force
+          Remove-Item .github/workflows/finalize-production-readiness.yml -Force -ErrorAction SilentlyContinue
+          Remove-Item .github/workflows/refresh-lockfile.yml -Force -ErrorAction SilentlyContinue
+      - name: Commit changes
+        if: success()
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: harden Pixy for public beta"
+          git push
