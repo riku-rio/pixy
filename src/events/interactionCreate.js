@@ -1,6 +1,16 @@
 const { Events, Collection } = require("discord.js");
 
 const DEFAULT_ERROR_MESSAGE = "An error occurred while executing this interaction.";
+const ERROR_MESSAGES = Object.freeze({
+  agent_actions_disabled:
+    "Ticket actions are disabled for this server. Please wait for a support team member to help you.",
+  close_ticket_disabled:
+    "Close Ticket is disabled for this server. Please wait for a support team member to close this ticket.",
+  rename_review_disabled:
+    "Rename Review is disabled for this server. Please ask a support team member to rename this ticket.",
+  escalation_disabled:
+    "Escalation is disabled for this server. Please wait for a support team member to assist you here.",
+});
 
 function toArray(value) {
   if (!value) return [];
@@ -8,10 +18,7 @@ function toArray(value) {
 }
 
 function getCooldowns(client) {
-  if (!client.cooldowns) {
-    client.cooldowns = new Collection();
-  }
-
+  if (!client.cooldowns) client.cooldowns = new Collection();
   return client.cooldowns;
 }
 
@@ -23,12 +30,16 @@ function getCooldownId(interaction, entry, fallbackName) {
   return entry?.cooldownId || entry?.name || entry?.customId || entry?.sourceCommand || fallbackName;
 }
 
+function getInteractionErrorMessage(error, entry) {
+  return ERROR_MESSAGES[error?.code] || entry?.errorMessage || DEFAULT_ERROR_MESSAGE;
+}
+
 async function safeReply(interaction, payload) {
   if (interaction.isAutocomplete?.()) {
     try {
       await interaction.respond([]);
     } catch {
-      // Ignore autocomplete response errors
+      // Ignore autocomplete response errors.
     }
     return;
   }
@@ -45,7 +56,7 @@ async function safeReply(interaction, payload) {
       await interaction.reply(finalPayload);
     }
   } catch {
-    // Prevent crashes if Discord rejects the reply/followUp
+    // Prevent crashes if Discord rejects the reply or follow-up.
   }
 }
 
@@ -63,18 +74,15 @@ function getDisabledMessage(entry) {
 
 async function checkGuildOnly(interaction, entry) {
   if (!entry?.guildOnly) return true;
-
   if (!interaction.guild) {
     await safeReply(interaction, entry.guildOnlyMessage || "This interaction can only be used inside a server.");
     return false;
   }
-
   return true;
 }
 
 async function checkUserPermissions(interaction, entry) {
   const permissions = toArray(entry?.userPermissions);
-
   if (permissions.length === 0) return true;
 
   if (!interaction.guild || !interaction.memberPermissions) {
@@ -95,13 +103,9 @@ async function checkUserPermissions(interaction, entry) {
 
 async function checkBotPermissions(interaction, entry) {
   const permissions = toArray(entry?.botPermissions);
-
-  if (permissions.length === 0) return true;
-
-  if (!interaction.guild) return true;
+  if (permissions.length === 0 || !interaction.guild) return true;
 
   const botMember = interaction.guild.members.me;
-
   if (!botMember) {
     await safeReply(interaction, "I could not check my permissions here.");
     return false;
@@ -124,7 +128,6 @@ async function checkBotPermissions(interaction, entry) {
 
 async function checkCooldown(interaction, entry, fallbackName) {
   const seconds = getCooldownSeconds(entry);
-
   if (!seconds || seconds <= 0) return true;
 
   const cooldowns = getCooldowns(interaction.client);
@@ -143,72 +146,44 @@ async function checkCooldown(interaction, entry, fallbackName) {
   }
 
   cooldowns.set(key, now + seconds * 1000);
-
   const timer = setTimeout(() => {
-    if (cooldowns.get(key) <= Date.now()) {
-      cooldowns.delete(key);
-    }
+    if (cooldowns.get(key) <= Date.now()) cooldowns.delete(key);
   }, seconds * 1000);
-
-  if (typeof timer.unref === "function") {
-    timer.unref();
-  }
-
+  if (typeof timer.unref === "function") timer.unref();
   return true;
 }
 
 async function runChecks(interaction, entry, fallbackName) {
   if (!entry) return true;
-
   if (isDisabled(entry)) {
     await safeReply(interaction, getDisabledMessage(entry));
     return false;
   }
-
   if (!(await checkGuildOnly(interaction, entry))) return false;
   if (!(await checkUserPermissions(interaction, entry))) return false;
   if (!(await checkBotPermissions(interaction, entry))) return false;
   if (!(await checkCooldown(interaction, entry, fallbackName))) return false;
-
   return true;
 }
 
 async function runInteraction(interaction, label, entry, callback) {
   try {
     const allowed = await runChecks(interaction, entry, label);
-
     if (!allowed) return;
-
     await callback();
   } catch (error) {
     console.error(`${label} failed:`, error);
-    await safeReply(interaction, entry?.errorMessage || DEFAULT_ERROR_MESSAGE);
+    await safeReply(interaction, getInteractionErrorMessage(error, entry));
   }
 }
 
 function matchesCustomId(handler, interaction) {
   if (!handler || !interaction.customId) return false;
-
-  if (typeof handler.matches === "function") {
-    return handler.matches(interaction.customId, interaction);
-  }
-
-  if (handler.customId instanceof RegExp) {
-    return handler.customId.test(interaction.customId);
-  }
-
-  if (Array.isArray(handler.customId)) {
-    return handler.customId.includes(interaction.customId);
-  }
-
-  if (typeof handler.customId === "string") {
-    return handler.customId === interaction.customId;
-  }
-
-  if (typeof handler.customIdPrefix === "string") {
-    return interaction.customId.startsWith(handler.customIdPrefix);
-  }
-
+  if (typeof handler.matches === "function") return handler.matches(interaction.customId, interaction);
+  if (handler.customId instanceof RegExp) return handler.customId.test(interaction.customId);
+  if (Array.isArray(handler.customId)) return handler.customId.includes(interaction.customId);
+  if (typeof handler.customId === "string") return handler.customId === interaction.customId;
+  if (typeof handler.customIdPrefix === "string") return interaction.customId.startsWith(handler.customIdPrefix);
   return false;
 }
 
@@ -223,41 +198,19 @@ function getSelectMenuType(interaction) {
 
 function normalizeSelectType(type) {
   const value = String(type || "").toLowerCase();
-
   if (!value) return "any";
-
-  if (["any", "select", "selectmenu", "select-menu", "anyselect", "anyselectmenu"].includes(value)) {
-    return "any";
-  }
-
-  if (["string", "stringselect", "stringselectmenu"].includes(value)) {
-    return "string";
-  }
-
-  if (["user", "userselect", "userselectmenu"].includes(value)) {
-    return "user";
-  }
-
-  if (["role", "roleselect", "roleselectmenu"].includes(value)) {
-    return "role";
-  }
-
-  if (["channel", "channelselect", "channelselectmenu"].includes(value)) {
-    return "channel";
-  }
-
-  if (["mentionable", "mentionableselect", "mentionableselectmenu"].includes(value)) {
-    return "mentionable";
-  }
-
+  if (["any", "select", "selectmenu", "select-menu", "anyselect", "anyselectmenu"].includes(value)) return "any";
+  if (["string", "stringselect", "stringselectmenu"].includes(value)) return "string";
+  if (["user", "userselect", "userselectmenu"].includes(value)) return "user";
+  if (["role", "roleselect", "roleselectmenu"].includes(value)) return "role";
+  if (["channel", "channelselect", "channelselectmenu"].includes(value)) return "channel";
+  if (["mentionable", "mentionableselect", "mentionableselectmenu"].includes(value)) return "mentionable";
   return value;
 }
 
 function selectTypeMatches(handler, interaction) {
-  const wantedType = getSelectMenuType(interaction);
   const handlerType = normalizeSelectType(handler?.type || handler?.selectType);
-
-  return handlerType === "any" || handlerType === wantedType;
+  return handlerType === "any" || handlerType === getSelectMenuType(interaction);
 }
 
 function isAnySelectMenu(interaction) {
@@ -275,9 +228,9 @@ function findButtonHandler(interaction) {
 }
 
 function findSelectMenuHandler(interaction) {
-  return interaction.client.selectMenuHandlers?.find((handler) => {
-    return selectTypeMatches(handler, interaction) && matchesCustomId(handler, interaction);
-  });
+  return interaction.client.selectMenuHandlers?.find(
+    (handler) => selectTypeMatches(handler, interaction) && matchesCustomId(handler, interaction)
+  );
 }
 
 function findModalHandler(interaction) {
@@ -286,19 +239,13 @@ function findModalHandler(interaction) {
 
 function matchesAutocompleteHandler(handler, interaction) {
   if (!handler) return false;
-
-  if (typeof handler.matches === "function") {
-    return handler.matches(interaction);
-  }
-
+  if (typeof handler.matches === "function") return handler.matches(interaction);
   const commandNames = toArray(handler.commandName || handler.name || handler.sourceCommand);
-
   return commandNames.includes(interaction.commandName);
 }
 
 async function handleAutocomplete(interaction) {
   const command = interaction.client.commands.get(interaction.commandName);
-
   const handler =
     interaction.client.autocompleteHandlers?.find((entry) => matchesAutocompleteHandler(entry, interaction)) ||
     command;
@@ -307,7 +254,7 @@ async function handleAutocomplete(interaction) {
     try {
       await interaction.respond([]);
     } catch {
-      // Ignore
+      // Ignore.
     }
     return;
   }
@@ -317,15 +264,13 @@ async function handleAutocomplete(interaction) {
       await interaction.respond([]);
       return;
     }
-
     await handler.execute(interaction);
   } catch (error) {
     console.error(`Autocomplete ${interaction.commandName} failed:`, error);
-
     try {
       await interaction.respond([]);
     } catch {
-      // Ignore
+      // Ignore.
     }
   }
 }
@@ -341,51 +286,32 @@ module.exports = {
 
     if (interaction.isChatInputCommand()) {
       const command = interaction.client.commands.get(interaction.commandName);
-
       if (!command) {
         await safeReply(interaction, "Unknown command.");
         return;
       }
-
-      await runInteraction(interaction, `Command ${interaction.commandName}`, command, async () => {
-        await command.execute(interaction);
-      });
-
+      await runInteraction(interaction, `Command ${interaction.commandName}`, command, () => command.execute(interaction));
       return;
     }
 
     if (interaction.isButton()) {
       const handler = findButtonHandler(interaction);
-
       if (!handler) return;
-
-      await runInteraction(interaction, `Button ${interaction.customId}`, handler, async () => {
-        await handler.execute(interaction);
-      });
-
+      await runInteraction(interaction, `Button ${interaction.customId}`, handler, () => handler.execute(interaction));
       return;
     }
 
     if (isAnySelectMenu(interaction)) {
       const handler = findSelectMenuHandler(interaction);
-
       if (!handler) return;
-
-      await runInteraction(interaction, `Select menu ${interaction.customId}`, handler, async () => {
-        await handler.execute(interaction);
-      });
-
+      await runInteraction(interaction, `Select menu ${interaction.customId}`, handler, () => handler.execute(interaction));
       return;
     }
 
     if (interaction.isModalSubmit()) {
       const handler = findModalHandler(interaction);
-
       if (!handler) return;
-
-      await runInteraction(interaction, `Modal ${interaction.customId}`, handler, async () => {
-        await handler.execute(interaction);
-      });
+      await runInteraction(interaction, `Modal ${interaction.customId}`, handler, () => handler.execute(interaction));
     }
   },
 };
