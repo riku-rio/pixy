@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { getDisabledActionCode } = require("../src/features/guildFeatureGate");
+const { getDisabledActionCode } = require("../src/features/guildFeatureRules");
 const { TICKET_ACTIONS } = require("../src/utils/tickets/actions/ticketActionTypes");
 
 const enabled = {
