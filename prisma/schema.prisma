@@ -108,7 +108,58 @@ model GuildSetting {
   agentActionsEnabled Boolean @default(true)
   groqApiKeyEncrypted String?
   aiModel String?
-  customBadWords String @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  guildBlockedTerms GuildBlockedTerm[]
+  guildAllowedTerms GuildAllowedTerm[]
+}
+
+model BlockedTerm {
+  id String @id @default(cuid())
+  term String
+  normalizedTerm String
+  locale String @default("en")
+  category String
+  severity String @default("medium")
+  matchType String @default("token")
+  enabled Boolean @default(true)
+  source String @default("pixy")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([normalizedTerm])
+  @@index([enabled])
+  @@index([category])
+  @@index([severity])
+  @@index([matchType])
+  @@index([enabled, category])
+}
+
+model GuildBlockedTerm {
+  id String @id @default(cuid())
+  guildId String
+  term String
+  normalizedTerm String
+  category String @default("custom")
+  severity String @default("medium")
+  matchType String @default("token")
+  enabled Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  setting GuildSetting @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  @@unique([guildId, normalizedTerm])
+  @@index([guildId])
+  @@index([guildId, enabled])
+}
+
+model GuildAllowedTerm {
+  id String @id @default(cuid())
+  guildId String
+  term String
+  normalizedTerm String
+  reason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  setting GuildSetting @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  @@unique([guildId, normalizedTerm])
+  @@index([guildId])
 }

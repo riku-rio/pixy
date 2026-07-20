@@ -14,7 +14,7 @@ const { prisma } = require("../config/prisma");
 const { defaultAiConfig, getGuildAiConfig, getOrCreateGuildSetting } = require("../config/ai");
 const { DEFAULT_GROQ_MODEL, validateGroqApiKey, validateGroqChatModel } = require("../ai/groqModels");
 const { encryptCredential } = require("../security/credentialEncryption");
-const { getBadWordsStats, addCustomBadWord, removeCustomBadWord } = require("../utils/badWords");
+const { getBlockedTermsStats, addGuildBlockedTerm, removeGuildBlockedTerm } = require("../utils/blockedTerms");
 
 const EPHEMERAL = 64;
 const PREFIX = {
@@ -187,18 +187,26 @@ async function renderAiApi(guildId, userId) {
 }
 
 async function renderBadWords(guildId, userId) {
-  const stats = await getBadWordsStats(guildId);
+  const stats = await getBlockedTermsStats(guildId);
   const embed = new EmbedBuilder()
-    .setTitle("🛡️ Bad Words Settings")
+    .setTitle("🛡️ Blocked Terms Settings")
     .setColor(0xed4245)
-    .setDescription("Manage the words Pixy blocks during ticket rename review.")
+    .setDescription("Manage the terms Pixy blocks during ticket rename review.")
     .addFields(
-      { name: "Built-in", value: String(stats.builtInCount), inline: true },
-      { name: "Custom", value: `${stats.customCount}/${stats.maxCustom}`, inline: true }
+      { name: "Global Terms", value: String(stats.globalCount), inline: true },
+      { name: "Custom Terms", value: `${stats.guildBlockedCount}/${stats.maxGuildCustom}`, inline: true },
+      { name: "Allow Terms", value: String(stats.guildAllowedCount), inline: true }
     );
 
-  if (stats.customWords.length) {
-    embed.addFields({ name: "Custom list", value: `\`${stats.customWords.slice(0, 20).join(", ")}\`` });
+  if (stats.globalByCategory) {
+    const categories = Object.entries(stats.globalByCategory)
+      .map(([cat, count]) => `${cat}: ${count}`)
+      .join(", ");
+    embed.addFields({ name: "Global by Category", value: categories || "None" });
+  }
+
+  if (stats.guildBlockedTerms.length) {
+    embed.addFields({ name: "Custom list", value: `\`${stats.guildBlockedTerms.slice(0, 20).join(", ")}\`` });
   }
 
   return {
@@ -210,8 +218,8 @@ async function renderBadWords(guildId, userId) {
           .setCustomId(scoped(PREFIX.BADWORD_ACTION, userId))
           .setPlaceholder("Select an action...")
           .addOptions(
-            { label: "Add Custom Word", description: "Add a word to this server's custom blocked list", value: "add", emoji: "🟢" },
-            { label: "Remove Custom Word", description: "Remove a word from this server's custom blocked list", value: "remove", emoji: "🗑️" }
+            { label: "Add Custom Term", description: "Add a term to this server's custom blocked list", value: "add", emoji: "🟢" },
+            { label: "Remove Custom Term", description: "Remove a term from this server's custom blocked list", value: "remove", emoji: "🗑️" }
           )
       ),
       navigation(userId),
@@ -296,25 +304,25 @@ module.exports = {
 
         if (interaction.values[0] === "add") {
           return interaction.showModal(
-            new ModalBuilder().setCustomId(scoped(PREFIX.BADWORD_MODAL, userId)).setTitle("Add Custom Bad Word").addComponents(
+            new ModalBuilder().setCustomId(scoped(PREFIX.BADWORD_MODAL, userId)).setTitle("Add Custom Term").addComponents(
               new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("word").setLabel("Word to add").setStyle(TextInputStyle.Short).setRequired(true)
+                new TextInputBuilder().setCustomId("word").setLabel("Term to add").setStyle(TextInputStyle.Short).setRequired(true)
               )
             )
           );
         }
 
-        const stats = await getBadWordsStats(interaction.guild.id);
-        if (!stats.customWords.length) {
-          return interaction.update({ content: "No custom words to remove.", embeds: [], components: [navigation(userId)] });
+        const stats = await getBlockedTermsStats(interaction.guild.id);
+        if (!stats.guildBlockedTerms.length) {
+          return interaction.update({ content: "No custom terms to remove.", embeds: [], components: [navigation(userId)] });
         }
 
         const menu = new StringSelectMenuBuilder()
           .setCustomId(scoped(PREFIX.BADWORD_REMOVE, userId))
-          .setPlaceholder("Select a word to remove...")
-          .addOptions(stats.customWords.slice(0, 25).map((word) => ({ label: word, value: word })));
+          .setPlaceholder("Select a term to remove...")
+          .addOptions(stats.guildBlockedTerms.slice(0, 25).map((word) => ({ label: word, value: word })));
         return interaction.update({
-          content: "Select a custom word to remove:",
+          content: "Select a custom term to remove:",
           embeds: [],
           components: [new ActionRowBuilder().addComponents(menu), navigation(userId)],
         });
@@ -326,7 +334,7 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.BADWORD_REMOVE.length);
         if (!(await assertOwner(interaction, userId))) return;
-        await removeCustomBadWord(interaction.guild.id, interaction.values[0]);
+        await removeGuildBlockedTerm(interaction.guild.id, interaction.values[0]);
         await interaction.update(await render(PAGES.BADWORDS, interaction.guild.id, userId));
       },
     },
@@ -437,9 +445,9 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.BADWORD_MODAL.length);
         if (!(await assertOwner(interaction, userId))) return;
-        const result = await addCustomBadWord(interaction.guild.id, cleanText(interaction.fields.getTextInputValue("word")));
+        const result = await addGuildBlockedTerm(interaction.guild.id, cleanText(interaction.fields.getTextInputValue("word")));
         await interaction.reply({
-          content: result.ok ? "Custom word added." : `Could not add that word: ${result.code}.`,
+          content: result.ok ? "Custom term added." : `Could not add that term: ${result.code}.`,
           flags: EPHEMERAL,
         });
       },

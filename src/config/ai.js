@@ -22,7 +22,6 @@ const defaultAiConfig = Object.freeze({
   actionMaxReplyChars: 1000,
   renameReviewEnabled: true,
   escalationNotificationChannelName: "pixy-notifications",
-  renameBlockedWords: ["fuck", "fucking", "fuk", "shit", "bitch", "nigga"],
 });
 
 const aiConfig = {

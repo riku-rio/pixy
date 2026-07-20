@@ -273,7 +273,8 @@ async function validateEscalateTicket({ actionRequest, message, ticket }) {
     };
   }
 
-  const unsafeReason = getUnsafeTicketNameReason(
+  const unsafeReason = await getUnsafeTicketNameReason(
+    message.guild?.id,
     `${proposedName || ""} ${sanitizedName || ""}`
   );
 
@@ -398,7 +399,8 @@ async function validateTicketAction({ actionRequest, message, ticket }) {
       };
     }
 
-    const unsafeReason = getUnsafeTicketNameReason(
+    const unsafeReason = await getUnsafeTicketNameReason(
+      message.guild?.id,
       `${proposedName || ""} ${sanitizedName || ""}`
     );
 

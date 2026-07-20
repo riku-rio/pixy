@@ -25,6 +25,8 @@ async function deleteGuildData(guildId) {
     prisma.ticketChannel.deleteMany({ where: { guildId } }),
     prisma.learnedAnswer.deleteMany({ where: { guildId } }),
     prisma.adminRoute.deleteMany({ where: { guildId } }),
+    prisma.guildBlockedTerm.deleteMany({ where: { guildId } }),
+    prisma.guildAllowedTerm.deleteMany({ where: { guildId } }),
     prisma.guildSetting.deleteMany({ where: { guildId } }),
     prisma.guildConfig.deleteMany({ where: { guildId } }),
   ]);
@@ -73,9 +75,14 @@ after(async () => {
 test("deleting one guild removes its encrypted settings without affecting another guild", async () => {
   await deleteGuildData("guild-alpha");
   const modelNames = ["guildConfig", "guildSetting", "learnedAnswer", "adminRoute", "ticketChannel", "aiUsageLog"];
+  const zeroExpectedModels = ["guildBlockedTerm", "guildAllowedTerm"];
   for (const modelName of modelNames) {
     assert.equal(await prisma[modelName].count({ where: { guildId: "guild-alpha" } }), 0);
     assert.equal(await prisma[modelName].count({ where: { guildId: "guild-beta" } }), 1);
+  }
+  for (const modelName of zeroExpectedModels) {
+    assert.equal(await prisma[modelName].count({ where: { guildId: "guild-alpha" } }), 0);
+    assert.equal(await prisma[modelName].count({ where: { guildId: "guild-beta" } }), 0);
   }
   const betaSetting = await prisma.guildSetting.findUnique({ where: { guildId: "guild-beta" } });
   assert.equal(betaSetting.aiModel, "openai/gpt-oss-120b");
