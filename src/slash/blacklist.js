@@ -42,6 +42,20 @@ async function assertOwner(interaction, userId) {
   return false;
 }
 
+async function acknowledgeUpdate(interaction) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate();
+  }
+}
+
+async function editPanel(interaction, payload) {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+    return;
+  }
+  await interaction.update(payload);
+}
+
 async function getConfiguredTicketCategory(guildId) {
   return prisma.guildConfig.findUnique({
     where: { guildId },
@@ -92,13 +106,13 @@ function reasonModal(userId, channelId) {
     .addComponents(new ActionRowBuilder().addComponents(reason));
 }
 
-async function validateAddChannel(guild, channelId) {
+async function validateAddChannel(guild, channelId, selectedChannel = null) {
   const config = await getConfiguredTicketCategory(guild.id);
   if (!config?.ticketCategoryId) {
     return { ok: false, message: "Configure the Pixy ticket category with `/pixy-setup` first." };
   }
 
-  const channel = await getGuildChannel(guild, channelId);
+  const channel = selectedChannel || (await getGuildChannel(guild, channelId));
   if (!channel || channel.type !== ChannelType.GuildText) {
     return { ok: false, message: "That text channel no longer exists." };
   }
@@ -126,10 +140,11 @@ async function addBlacklistEntry(guildId, channelId, reason) {
 
 async function finishAdd(interaction, userId, channelId, reason) {
   if (!(await assertOwner(interaction, userId))) return;
+  await acknowledgeUpdate(interaction);
 
   const validation = await validateAddChannel(interaction.guild, channelId);
   if (!validation.ok) {
-    await interaction.update({
+    await editPanel(interaction, {
       content: validation.message,
       embeds: [],
       components: [],
@@ -139,7 +154,7 @@ async function finishAdd(interaction, userId, channelId, reason) {
   }
 
   await addBlacklistEntry(interaction.guild.id, channelId, reason);
-  await interaction.update({
+  await editPanel(interaction, {
     content: `<#${channelId}> is now excluded. Pixy will not read, learn from, or reply in it.`,
     embeds: [],
     components: [],
@@ -158,16 +173,14 @@ async function buildRemoveReply(guild, userId) {
     return { content: "No channels are currently excluded from Pixy AI.", components: [] };
   }
 
-  const options = await Promise.all(
-    entries.map(async (entry) => {
-      const channel = await getGuildChannel(guild, entry.channelId);
-      return {
-        label: (channel?.name ? `#${channel.name}` : `Unavailable ${entry.channelId.slice(-6)}`).slice(0, 100),
-        value: entry.channelId,
-        description: (entry.reason || "No private reason").slice(0, 100),
-      };
-    })
-  );
+  const options = entries.map((entry) => {
+    const channel = guild.channels.cache.get(entry.channelId);
+    return {
+      label: (channel?.name ? `#${channel.name}` : `Unavailable ${entry.channelId.slice(-6)}`).slice(0, 100),
+      value: entry.channelId,
+      description: (entry.reason || "No private reason").slice(0, 100),
+    };
+  });
 
   const menu = new StringSelectMenuBuilder()
     .setCustomId(scoped(PREFIX.REMOVE_CHANNEL, userId))
@@ -261,9 +274,10 @@ module.exports = {
 
   async execute(interaction) {
     const action = interaction.options.getString("action", true);
+    await interaction.deferReply({ flags: EPHEMERAL });
 
     if (action === "list") {
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [await buildListEmbed(interaction.guild.id)],
         allowedMentions: { parse: [] },
       });
@@ -272,26 +286,25 @@ module.exports = {
 
     if (action === "add") {
       const config = await getConfiguredTicketCategory(interaction.guild.id);
-      await interaction.reply({
+      await interaction.editReply({
         content: config?.ticketCategoryId
           ? `Choose a text channel inside <#${config.ticketCategoryId}> to exclude from Pixy AI.`
           : "Configure the Pixy ticket category with `/pixy-setup` first.",
         components: config?.ticketCategoryId ? [addChannelRow(interaction.user.id)] : [],
-        flags: EPHEMERAL,
         allowedMentions: { parse: [] },
       });
       return;
     }
 
     if (action === "remove") {
-      await interaction.reply({
+      await interaction.editReply({
         ...(await buildRemoveReply(interaction.guild, interaction.user.id)),
-        flags: EPHEMERAL,
+        allowedMentions: { parse: [] },
       });
       return;
     }
 
-    await interaction.reply({ content: "Unsupported blacklist action.", flags: EPHEMERAL });
+    await interaction.editReply({ content: "Unsupported blacklist action." });
   },
 
   selectMenuHandlers: [
@@ -301,11 +314,13 @@ module.exports = {
       async execute(interaction) {
         const [userId] = parseScoped(interaction.customId, PREFIX.ADD_CHANNEL);
         if (!(await assertOwner(interaction, userId))) return;
+        await acknowledgeUpdate(interaction);
 
         const channelId = interaction.values[0];
-        const validation = await validateAddChannel(interaction.guild, channelId);
+        const selectedChannel = interaction.channels?.get(channelId) || null;
+        const validation = await validateAddChannel(interaction.guild, channelId, selectedChannel);
         if (!validation.ok) {
-          await interaction.update({
+          await editPanel(interaction, {
             content: validation.message,
             embeds: [],
             components: [addChannelRow(userId)],
@@ -318,7 +333,7 @@ module.exports = {
           where: { guildId_channelId: { guildId: interaction.guild.id, channelId } },
         });
         if (existing) {
-          await interaction.update({
+          await editPanel(interaction, {
             content: `<#${channelId}> is already excluded. Choose another channel.`,
             embeds: [],
             components: [addChannelRow(userId)],
@@ -327,7 +342,7 @@ module.exports = {
           return;
         }
 
-        await interaction.update({
+        await editPanel(interaction, {
           content: `Selected <#${channelId}>. Do you want to save a private reason?`,
           embeds: [],
           components: [reasonButtons(userId, channelId)],
@@ -341,6 +356,7 @@ module.exports = {
       async execute(interaction) {
         const [userId] = parseScoped(interaction.customId, PREFIX.REMOVE_CHANNEL);
         if (!(await assertOwner(interaction, userId))) return;
+        await acknowledgeUpdate(interaction);
 
         const channelId = interaction.values[0];
         const result = await removeBlacklistEntry(interaction.guild, channelId);
@@ -350,7 +366,7 @@ module.exports = {
             ? `<#${channelId}> is no longer excluded and has been reactivated for Pixy AI.`
             : `The blacklist entry for <#${channelId}> was removed, but the channel was not reactivated because it is missing or no longer inside the configured ticket category.`;
 
-        await interaction.update({
+        await editPanel(interaction, {
           content,
           embeds: [],
           components: [],
