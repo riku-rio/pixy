@@ -20,9 +20,13 @@ async function assertOwnerAndAdmin(interaction, ownerUserId) {
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName("clear").setDescription("Delete all Pixy data stored for this server.").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  data: new SlashCommandBuilder()
+    .setName("clear")
+    .setDescription("Delete all Pixy data stored for this server.")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
+
   async execute(interaction) {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`${CONFIRM_PREFIX}${interaction.user.id}`).setLabel("Delete server data").setStyle(ButtonStyle.Danger),
@@ -35,7 +39,6 @@ module.exports = {
         "- Learned knowledge and ticket records",
         "- Admin routes and AI usage logs",
         "- Feature settings, model selection, and the encrypted Groq credential",
-        "- Trial activation history and daily usage totals",
         "",
         "Discord channels and roles themselves are not deleted.",
       ].join("\n"),
@@ -43,6 +46,7 @@ module.exports = {
       flags: EPHEMERAL,
     });
   },
+
   buttonHandlers: [
     {
       customIdPrefix: CONFIRM_PREFIX,
@@ -52,7 +56,6 @@ module.exports = {
         await interaction.deferUpdate();
         const guildId = interaction.guild.id;
         const results = await prisma.$transaction([
-          prisma.guildDailyAiUsage.deleteMany({ where: { guildId } }),
           prisma.aiUsageLog.deleteMany({ where: { guildId } }),
           prisma.ticketChannel.deleteMany({ where: { guildId } }),
           prisma.learnedAnswer.deleteMany({ where: { guildId } }),
@@ -65,7 +68,7 @@ module.exports = {
           content: [
             "Done. All Pixy database data for this server has been deleted.",
             `Deleted records: **${totalDeleted}**`,
-            "The Groq credential, trial history, and usage totals were removed. Run /pixy-setup to configure the server again.",
+            "The encrypted Groq credential was removed. Run /pixy-setup and /pixy-settings to configure the server again.",
           ].join("\n"),
           components: [],
         });

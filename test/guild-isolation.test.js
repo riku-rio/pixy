@@ -21,7 +21,6 @@ function runPrismaCommand(args) {
 
 async function deleteGuildData(guildId) {
   return prisma.$transaction([
-    prisma.guildDailyAiUsage.deleteMany({ where: { guildId } }),
     prisma.aiUsageLog.deleteMany({ where: { guildId } }),
     prisma.ticketChannel.deleteMany({ where: { guildId } }),
     prisma.learnedAnswer.deleteMany({ where: { guildId } }),
@@ -38,48 +37,30 @@ before(async () => {
   delete require.cache[prismaModulePath];
   ({ prisma } = require("../src/config/prisma"));
 
-  await prisma.guildConfig.createMany({
-    data: [
-      { guildId: "guild-alpha", ticketCategoryId: "category-alpha" },
-      { guildId: "guild-beta", ticketCategoryId: "category-beta" },
-    ],
-  });
-  await prisma.guildSetting.createMany({
-    data: [
-      { guildId: "guild-alpha", groqApiKeyEncrypted: "v1:alpha-placeholder:tag:ciphertext", aiModel: "openai/gpt-oss-20b", trialStartedAt: new Date("2026-07-18T00:00:00.000Z"), trialEndsAt: new Date("2026-07-25T00:00:00.000Z") },
-      { guildId: "guild-beta", groqApiKeyEncrypted: "v1:beta-placeholder:tag:ciphertext", aiModel: "openai/gpt-oss-120b" },
-    ],
-  });
-  await prisma.learnedAnswer.createMany({
-    data: [
-      { guildId: "guild-alpha", type: "qna", question: "Alpha question", answer: "Alpha answer" },
-      { guildId: "guild-beta", type: "qna", question: "Beta question", answer: "Beta answer" },
-    ],
-  });
-  await prisma.adminRoute.createMany({
-    data: [
-      { guildId: "guild-alpha", roleId: "role-alpha", description: "Alpha support route" },
-      { guildId: "guild-beta", roleId: "role-beta", description: "Beta support route" },
-    ],
-  });
-  await prisma.ticketChannel.createMany({
-    data: [
-      { guildId: "guild-alpha", channelId: "channel-alpha" },
-      { guildId: "guild-beta", channelId: "channel-beta" },
-    ],
-  });
-  await prisma.aiUsageLog.createMany({
-    data: [
-      { guildId: "guild-alpha", channelId: "channel-alpha", provider: "groq", status: "success" },
-      { guildId: "guild-beta", channelId: "channel-beta", provider: "groq", status: "success" },
-    ],
-  });
-  await prisma.guildDailyAiUsage.createMany({
-    data: [
-      { guildId: "guild-alpha", dayKey: "2026-07-18", acceptedRequests: 50 },
-      { guildId: "guild-beta", dayKey: "2026-07-18", acceptedRequests: 10 },
-    ],
-  });
+  await prisma.guildConfig.createMany({ data: [
+    { guildId: "guild-alpha", ticketCategoryId: "category-alpha" },
+    { guildId: "guild-beta", ticketCategoryId: "category-beta" },
+  ] });
+  await prisma.guildSetting.createMany({ data: [
+    { guildId: "guild-alpha", groqApiKeyEncrypted: "v1:alpha-placeholder:tag:ciphertext", aiModel: "openai/gpt-oss-20b" },
+    { guildId: "guild-beta", groqApiKeyEncrypted: "v1:beta-placeholder:tag:ciphertext", aiModel: "openai/gpt-oss-120b" },
+  ] });
+  await prisma.learnedAnswer.createMany({ data: [
+    { guildId: "guild-alpha", type: "qna", question: "Alpha question", answer: "Alpha answer" },
+    { guildId: "guild-beta", type: "qna", question: "Beta question", answer: "Beta answer" },
+  ] });
+  await prisma.adminRoute.createMany({ data: [
+    { guildId: "guild-alpha", roleId: "role-alpha", description: "Alpha support route" },
+    { guildId: "guild-beta", roleId: "role-beta", description: "Beta support route" },
+  ] });
+  await prisma.ticketChannel.createMany({ data: [
+    { guildId: "guild-alpha", channelId: "channel-alpha" },
+    { guildId: "guild-beta", channelId: "channel-beta" },
+  ] });
+  await prisma.aiUsageLog.createMany({ data: [
+    { guildId: "guild-alpha", channelId: "channel-alpha", provider: "groq", status: "success" },
+    { guildId: "guild-beta", channelId: "channel-beta", provider: "groq", status: "success" },
+  ] });
 });
 
 after(async () => {
@@ -89,47 +70,13 @@ after(async () => {
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 });
 
-test("deleting one guild removes its encrypted settings and usage without affecting another guild", async () => {
+test("deleting one guild removes its encrypted settings without affecting another guild", async () => {
   await deleteGuildData("guild-alpha");
-
-  const alphaCounts = {
-    config: await prisma.guildConfig.count({ where: { guildId: "guild-alpha" } }),
-    settings: await prisma.guildSetting.count({ where: { guildId: "guild-alpha" } }),
-    learnedAnswers: await prisma.learnedAnswer.count({ where: { guildId: "guild-alpha" } }),
-    adminRoutes: await prisma.adminRoute.count({ where: { guildId: "guild-alpha" } }),
-    ticketChannels: await prisma.ticketChannel.count({ where: { guildId: "guild-alpha" } }),
-    usageLogs: await prisma.aiUsageLog.count({ where: { guildId: "guild-alpha" } }),
-    dailyUsage: await prisma.guildDailyAiUsage.count({ where: { guildId: "guild-alpha" } }),
-  };
-  assert.deepEqual(alphaCounts, {
-    config: 0,
-    settings: 0,
-    learnedAnswers: 0,
-    adminRoutes: 0,
-    ticketChannels: 0,
-    usageLogs: 0,
-    dailyUsage: 0,
-  });
-
-  const betaCounts = {
-    config: await prisma.guildConfig.count({ where: { guildId: "guild-beta" } }),
-    settings: await prisma.guildSetting.count({ where: { guildId: "guild-beta" } }),
-    learnedAnswers: await prisma.learnedAnswer.count({ where: { guildId: "guild-beta" } }),
-    adminRoutes: await prisma.adminRoute.count({ where: { guildId: "guild-beta" } }),
-    ticketChannels: await prisma.ticketChannel.count({ where: { guildId: "guild-beta" } }),
-    usageLogs: await prisma.aiUsageLog.count({ where: { guildId: "guild-beta" } }),
-    dailyUsage: await prisma.guildDailyAiUsage.count({ where: { guildId: "guild-beta" } }),
-  };
-  assert.deepEqual(betaCounts, {
-    config: 1,
-    settings: 1,
-    learnedAnswers: 1,
-    adminRoutes: 1,
-    ticketChannels: 1,
-    usageLogs: 1,
-    dailyUsage: 1,
-  });
-
+  const modelNames = ["guildConfig", "guildSetting", "learnedAnswer", "adminRoute", "ticketChannel", "aiUsageLog"];
+  for (const modelName of modelNames) {
+    assert.equal(await prisma[modelName].count({ where: { guildId: "guild-alpha" } }), 0);
+    assert.equal(await prisma[modelName].count({ where: { guildId: "guild-beta" } }), 1);
+  }
   const betaSetting = await prisma.guildSetting.findUnique({ where: { guildId: "guild-beta" } });
   assert.equal(betaSetting.aiModel, "openai/gpt-oss-120b");
   assert.equal(betaSetting.groqApiKeyEncrypted.startsWith("v1:"), true);

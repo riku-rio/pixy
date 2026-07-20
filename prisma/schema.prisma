@@ -98,17 +98,6 @@ model AiUsageLog {
   createdAt DateTime @default(now())
 }
 
-model GuildDailyAiUsage {
-  id String @id @default(cuid())
-  guildId String
-  dayKey String
-  acceptedRequests Int @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  @@unique([guildId, dayKey])
-  @@index([guildId])
-}
-
 model GuildSetting {
   id String @id @default(cuid())
   guildId String @unique
@@ -120,10 +109,6 @@ model GuildSetting {
   groqApiKeyEncrypted String?
   aiModel String?
   customBadWords String @default("[]")
-  plan String @default("free")
-  planExpiresAt DateTime?
-  trialStartedAt DateTime?
-  trialEndsAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
