@@ -1,14 +1,24 @@
 const { PrismaClient } = require("@prisma/client");
-const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL,
-});
+function createAdapter(databaseUrl = process.env.DATABASE_URL) {
+  const url = String(databaseUrl || "").trim();
+  if (!url) {
+    throw new Error("DATABASE_URL is required.");
+  }
+
+  return new PrismaMariaDb(url, {
+    onConnectionError(error) {
+      console.error("MySQL connection error:", error?.message || error);
+    },
+  });
+}
 
 const prisma = new PrismaClient({
-  adapter,
+  adapter: createAdapter(),
 });
 
 module.exports = {
+  createAdapter,
   prisma,
 };
