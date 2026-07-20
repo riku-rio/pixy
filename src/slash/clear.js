@@ -37,6 +37,7 @@ module.exports = {
         "This permanently deletes all Pixy data stored for this server, including:",
         "- Ticket and escalation configuration",
         "- Learned knowledge and ticket records",
+        "- Channel blacklist entries",
         "- Admin routes and AI usage logs",
         "- Feature settings, model selection, and the encrypted Groq credential",
         "",
@@ -60,6 +61,9 @@ module.exports = {
           prisma.ticketChannel.deleteMany({ where: { guildId } }),
           prisma.learnedAnswer.deleteMany({ where: { guildId } }),
           prisma.adminRoute.deleteMany({ where: { guildId } }),
+          prisma.guildIgnoredChannel.deleteMany({ where: { guildId } }),
+          prisma.guildBlockedTerm.deleteMany({ where: { guildId } }),
+          prisma.guildAllowedTerm.deleteMany({ where: { guildId } }),
           prisma.guildSetting.deleteMany({ where: { guildId } }),
           prisma.guildConfig.deleteMany({ where: { guildId } }),
         ]);
