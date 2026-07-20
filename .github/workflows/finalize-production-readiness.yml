@@ -1,4 +1,4 @@
-name: Finalize production readiness
+name: Finalize MySQL lockfile
 
 on:
   push:
@@ -13,11 +13,25 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_DATABASE: pixy_test
-          MYSQL_USER: pixy
-          MYSQL_PASSWORD: pixy_test_password
-          MYSQL_ROOT_PASSWORD: root
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/production-readiness-mysql-safety
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Generate package lock
+        shell: pwsh
+        run: |
+          Remove-Item package-lock.json -Force -ErrorAction SilentlyContinue
+          npm install --package-lock-only --ignore-scripts
+          Remove-Item .github/workflows/refresh-lockfile.yml -Force -ErrorAction SilentlyContinue
+          Remove-Item .github/workflows/finalize-production-readiness.yml -Force
+      - name: Commit lockfile
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json .github/workflows
+          git commit -m "chore: refresh mysql package lock"
+          git push
