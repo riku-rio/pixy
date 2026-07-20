@@ -1,18 +1,31 @@
 const { PrismaClient } = require("@prisma/client");
 const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 
-function createAdapter(databaseUrl = process.env.DATABASE_URL) {
-  const rawUrl = String(databaseUrl || "").trim();
-  if (!rawUrl) throw new Error("DATABASE_URL is required.");
+function resolveDatabaseUrl(databaseUrl) {
+  const isTest = String(process.env.NODE_ENV || "").toLowerCase() === "test";
+  const testDatabaseUrl = String(process.env.TEST_DATABASE_URL || "").trim();
+  if (isTest && testDatabaseUrl) return testDatabaseUrl;
+  return String(databaseUrl || process.env.DATABASE_URL || "").trim();
+}
+
+function createAdapter(databaseUrl) {
+  const rawUrl = resolveDatabaseUrl(databaseUrl);
+  if (!rawUrl) {
+    throw new Error(
+      String(process.env.NODE_ENV || "").toLowerCase() === "test"
+        ? "TEST_DATABASE_URL is required for tests. Start mysql_test with npm run db:up."
+        : "DATABASE_URL is required."
+    );
+  }
 
   const url = new URL(rawUrl);
   if (url.protocol !== "mysql:" && url.protocol !== "mariadb:") {
-    throw new Error("DATABASE_URL must use the mysql:// or mariadb:// protocol.");
+    throw new Error("Database URL must use the mysql:// or mariadb:// protocol.");
   }
 
   const database = url.pathname.replace(/^\//, "");
-  if (!database) throw new Error("DATABASE_URL must include a database name.");
-  const isLocal = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "mysql" || url.hostname === "mysql_test";
+  if (!database) throw new Error("Database URL must include a database name.");
+  const isLocal = ["127.0.0.1", "localhost", "mysql", "mysql_test"].includes(url.hostname);
 
   return new PrismaMariaDb({
     host: url.hostname,
@@ -29,4 +42,4 @@ function createAdapter(databaseUrl = process.env.DATABASE_URL) {
 
 const prisma = new PrismaClient({ adapter: createAdapter() });
 
-module.exports = { createAdapter, prisma };
+module.exports = { createAdapter, prisma, resolveDatabaseUrl };
