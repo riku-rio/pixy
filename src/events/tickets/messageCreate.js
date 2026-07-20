@@ -74,7 +74,7 @@ async function logAiUsage({ message, config, aiResult, status, error }) {
   await prisma.aiUsageLog.create({
     data: {
       guildId: message.guild.id,
-      channelId: message.channel.id,
+      channelId: message.channelId,
       userId: message.author.id,
       provider: config.aiProvider || aiConfig.provider,
       model: aiResult?.model || config.aiModel || aiConfig.groq.model,
@@ -93,20 +93,23 @@ module.exports = {
     try {
       if (shouldIgnoreMessage(message) || message.channel.type !== ChannelType.GuildText) return;
 
+      const channelId = message.channelId;
+      const guildId = message.guild.id;
+
       const [config, ticket, ignoredChannel] = await Promise.all([
-        prisma.guildConfig.findUnique({ where: { guildId: message.guild.id } }),
-        prisma.ticketChannel.findUnique({ where: { channelId: message.channel.id } }),
+        prisma.guildConfig.findUnique({ where: { guildId } }),
+        prisma.ticketChannel.findUnique({ where: { channelId } }),
         prisma.guildIgnoredChannel.findUnique({
-          where: { guildId_channelId: { guildId: message.guild.id, channelId: message.channel.id } },
+          where: { guildId_channelId: { guildId, channelId } },
         }),
       ]);
       if (!config?.enabled || config.aiEnabled === false || !ticket || ticket.closed || ticket.aiEnabled === false || ignoredChannel) return;
 
       const now = Date.now();
-      const lastReplyAt = channelCooldowns.get(message.channel.id) || 0;
+      const lastReplyAt = channelCooldowns.get(channelId) || 0;
       if (now - lastReplyAt < aiConfig.replyCooldownMs) return;
-      channelCooldowns.set(message.channel.id, now);
-      const cleanupTimer = setTimeout(() => channelCooldowns.delete(message.channel.id), aiConfig.replyCooldownMs + 1000);
+      channelCooldowns.set(channelId, now);
+      const cleanupTimer = setTimeout(() => channelCooldowns.delete(channelId), aiConfig.replyCooldownMs + 1000);
       cleanupTimer.unref?.();
 
       const userMessage = cleanInput(message.content);
@@ -116,7 +119,7 @@ module.exports = {
         return;
       }
 
-      await prisma.ticketChannel.update({ where: { channelId: message.channel.id }, data: { lastUserMessageAt: new Date() } });
+      await prisma.ticketChannel.update({ where: { channelId }, data: { lastUserMessageAt: new Date() } });
       await message.channel.sendTyping();
 
       const context = await buildTicketContext({ message });
@@ -177,7 +180,7 @@ module.exports = {
           await logAiUsage({ message, config, aiResult, status: `action_success:${validation.action}` });
           if (validation.action !== TICKET_ACTIONS.CLOSE_TICKET && !execution.replySent && parsed.text) {
             await safeReply(message, String(parsed.text).slice(0, Number(aiConfig.actionMaxReplyChars || 1000)));
-            await prisma.ticketChannel.update({ where: { channelId: message.channel.id }, data: { lastAiReplyAt: new Date() } });
+            await prisma.ticketChannel.update({ where: { channelId }, data: { lastAiReplyAt: new Date() } });
           }
         } catch (error) {
           await logAiUsage({ message, config, aiResult, status: `action_failed:${validation.action}`, error: error?.message || error });
@@ -194,7 +197,7 @@ module.exports = {
       }
 
       for (const chunk of splitDiscordMessage(parsed.text)) await safeReply(message, chunk);
-      await prisma.ticketChannel.update({ where: { channelId: message.channel.id }, data: { lastAiReplyAt: new Date() } });
+      await prisma.ticketChannel.update({ where: { channelId }, data: { lastAiReplyAt: new Date() } });
       await logAiUsage({ message, config, aiResult, status: "success" });
     } catch (error) {
       console.error("MessageCreate AI ticket handler failed:", error);
