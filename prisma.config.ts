@@ -10,4 +10,8 @@ export default defineConfig({
     path: "prisma/mysql-migrations",
   },
   datasource: {
-    url: isTest && testDatabaseUrl ? testDatabaseUrl : env
+    url: isTest && testDatabaseUrl
+      ? testDatabaseUrl
+      : env("DATABASE_URL"),
+  },
+});

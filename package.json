@@ -13,7 +13,7 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "node prisma/seed-mysql.js",
     "pretest": "prisma generate",
-    "test": "node --test"
+    "test": "node test/run-tests.js"
   },
   "engines": {
     "node": ">=20"
