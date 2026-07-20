@@ -2,10 +2,45 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelSelectMenuBuilder,
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  EmbedBuilder,
 } = require("discord.js");
 const { prisma } = require("../config/prisma");
 
 const EPHEMERAL = 64;
+const PREFIX = Object.freeze({
+  ADD_CHANNEL: "blacklist_add_channel:",
+  ADD_REASON_YES: "blacklist_add_reason_yes:",
+  ADD_REASON_NO: "blacklist_add_reason_no:",
+  ADD_REASON_MODAL: "blacklist_add_reason_modal:",
+  REMOVE_CHANNEL: "blacklist_remove_channel:",
+});
+
+const scoped = (prefix, ...parts) => `${prefix}${parts.join(":")}`;
+const parseScoped = (customId, prefix) => customId.slice(prefix.length).split(":");
+const cleanText = (value) => String(value || "").replace(/\s+/g, " ").trim();
+
+async function assertOwner(interaction, userId) {
+  const allowed =
+    interaction.guild &&
+    interaction.user.id === userId &&
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
+
+  if (allowed) return true;
+
+  await interaction.reply({
+    content: "Only the administrator who opened this blacklist panel can use it.",
+    flags: EPHEMERAL,
+  });
+  return false;
+}
 
 async function getConfiguredTicketCategory(guildId) {
   return prisma.guildConfig.findUnique({
@@ -14,33 +49,195 @@ async function getConfiguredTicketCategory(guildId) {
   });
 }
 
-async function assertTicketCategoryChannel(interaction, channel) {
-  if (!channel || channel.type !== ChannelType.GuildText) {
-    await interaction.reply({
-      content: "Select a normal text channel.",
-      flags: EPHEMERAL,
-    });
-    return false;
+async function getGuildChannel(guild, channelId) {
+  return guild.channels.cache.get(channelId) || guild.channels.fetch(channelId).catch(() => null);
+}
+
+function addChannelRow(userId) {
+  const menu = new ChannelSelectMenuBuilder()
+    .setCustomId(scoped(PREFIX.ADD_CHANNEL, userId))
+    .setPlaceholder("Choose a ticket channel...")
+    .setChannelTypes(ChannelType.GuildText)
+    .setMinValues(1)
+    .setMaxValues(1);
+
+  return new ActionRowBuilder().addComponents(menu);
+}
+
+function reasonButtons(userId, channelId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(scoped(PREFIX.ADD_REASON_YES, userId, channelId))
+      .setLabel("Yes, add a reason")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(scoped(PREFIX.ADD_REASON_NO, userId, channelId))
+      .setLabel("No reason")
+      .setStyle(ButtonStyle.Secondary)
+  );
+}
+
+function reasonModal(userId, channelId) {
+  const reason = new TextInputBuilder()
+    .setCustomId("reason")
+    .setLabel("Private admin reason")
+    .setPlaceholder("Why should Pixy ignore this channel?")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(300);
+
+  return new ModalBuilder()
+    .setCustomId(scoped(PREFIX.ADD_REASON_MODAL, userId, channelId))
+    .setTitle("Blacklist channel reason")
+    .addComponents(new ActionRowBuilder().addComponents(reason));
+}
+
+async function validateAddChannel(guild, channelId) {
+  const config = await getConfiguredTicketCategory(guild.id);
+  if (!config?.ticketCategoryId) {
+    return { ok: false, message: "Configure the Pixy ticket category with `/pixy-setup` first." };
   }
 
-  const config = await getConfiguredTicketCategory(interaction.guild.id);
-  if (!config?.ticketCategoryId) {
-    await interaction.reply({
-      content: "Configure the Pixy ticket category with `/pixy-setup` first.",
-      flags: EPHEMERAL,
-    });
-    return false;
+  const channel = await getGuildChannel(guild, channelId);
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    return { ok: false, message: "That text channel no longer exists." };
   }
 
   if (channel.parentId !== config.ticketCategoryId) {
-    await interaction.reply({
-      content: "That channel is not inside the configured Pixy ticket category.",
-      flags: EPHEMERAL,
-    });
-    return false;
+    return {
+      ok: false,
+      message: `That channel is not inside <#${config.ticketCategoryId}>. Choose a channel from the configured Pixy ticket category.`,
+    };
   }
 
-  return true;
+  return { ok: true, channel };
+}
+
+async function addBlacklistEntry(guildId, channelId, reason) {
+  await prisma.$transaction([
+    prisma.guildIgnoredChannel.upsert({
+      where: { guildId_channelId: { guildId, channelId } },
+      create: { guildId, channelId, reason },
+      update: { reason },
+    }),
+    prisma.ticketChannel.deleteMany({ where: { guildId, channelId } }),
+  ]);
+}
+
+async function finishAdd(interaction, userId, channelId, reason) {
+  if (!(await assertOwner(interaction, userId))) return;
+
+  const validation = await validateAddChannel(interaction.guild, channelId);
+  if (!validation.ok) {
+    await interaction.update({
+      content: validation.message,
+      embeds: [],
+      components: [],
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
+  await addBlacklistEntry(interaction.guild.id, channelId, reason);
+  await interaction.update({
+    content: `<#${channelId}> is now excluded. Pixy will not read, learn from, or reply in it.`,
+    embeds: [],
+    components: [],
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function buildRemoveReply(guild, userId) {
+  const entries = await prisma.guildIgnoredChannel.findMany({
+    where: { guildId: guild.id },
+    orderBy: { createdAt: "asc" },
+    take: 25,
+  });
+
+  if (!entries.length) {
+    return { content: "No channels are currently excluded from Pixy AI.", components: [] };
+  }
+
+  const options = await Promise.all(
+    entries.map(async (entry) => {
+      const channel = await getGuildChannel(guild, entry.channelId);
+      return {
+        label: (channel?.name ? `#${channel.name}` : `Unavailable ${entry.channelId.slice(-6)}`).slice(0, 100),
+        value: entry.channelId,
+        description: (entry.reason || "No private reason").slice(0, 100),
+      };
+    })
+  );
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(scoped(PREFIX.REMOVE_CHANNEL, userId))
+    .setPlaceholder("Choose a blacklisted channel...")
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(options);
+
+  return {
+    content: "Choose a channel to restore to Pixy AI.",
+    components: [new ActionRowBuilder().addComponents(menu)],
+  };
+}
+
+async function removeBlacklistEntry(guild, channelId) {
+  const [config, channel] = await Promise.all([
+    getConfiguredTicketCategory(guild.id),
+    getGuildChannel(guild, channelId),
+  ]);
+
+  const canReactivate =
+    channel?.type === ChannelType.GuildText &&
+    config?.ticketCategoryId &&
+    channel.parentId === config.ticketCategoryId;
+
+  let removedCount = 0;
+  await prisma.$transaction(async (tx) => {
+    const removed = await tx.guildIgnoredChannel.deleteMany({
+      where: { guildId: guild.id, channelId },
+    });
+    removedCount = removed.count;
+
+    if (removed.count && canReactivate) {
+      await tx.ticketChannel.upsert({
+        where: { channelId },
+        create: { guildId: guild.id, channelId, aiEnabled: true },
+        update: {
+          guildId: guild.id,
+          aiEnabled: true,
+          closed: false,
+          status: "open",
+          closedAt: null,
+          closedByAi: false,
+        },
+      });
+    }
+  });
+
+  return { removedCount, canReactivate };
+}
+
+async function buildListEmbed(guildId) {
+  const entries = await prisma.guildIgnoredChannel.findMany({
+    where: { guildId },
+    orderBy: { createdAt: "asc" },
+    take: 50,
+  });
+
+  const description = entries.length
+    ? entries
+        .map((entry, index) => `${index + 1}. <#${entry.channelId}>${entry.reason ? ` - ${entry.reason}` : ""}`)
+        .join("\n")
+        .slice(0, 4096)
+    : "No channels are excluded from Pixy AI.";
+
+  return new EmbedBuilder()
+    .setTitle("Pixy AI channel blacklist")
+    .setColor(0xed4245)
+    .setDescription(description)
+    .setFooter({ text: `${entries.length} excluded channel${entries.length === 1 ? "" : "s"}` });
 }
 
 module.exports = {
@@ -58,18 +255,6 @@ module.exports = {
           { name: "Remove", value: "remove" },
           { name: "List", value: "list" }
         )
-    )
-    .addChannelOption((option) =>
-      option
-        .setName("channel")
-        .setDescription("Ticket channel for add or remove")
-        .addChannelTypes(ChannelType.GuildText)
-    )
-    .addStringOption((option) =>
-      option
-        .setName("reason")
-        .setDescription("Optional private admin note for add")
-        .setMaxLength(300)
     ),
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
@@ -78,69 +263,20 @@ module.exports = {
     const action = interaction.options.getString("action", true);
 
     if (action === "list") {
-      const ignored = await prisma.guildIgnoredChannel.findMany({
-        where: { guildId: interaction.guild.id },
-        orderBy: { createdAt: "asc" },
-        take: 50,
-      });
-
       await interaction.reply({
-        content: ignored.length
-          ? [
-              "**Channels excluded from Pixy AI**",
-              ...ignored.map(
-                (entry) =>
-                  `- <#${entry.channelId}>${
-                    entry.reason ? ` - ${entry.reason}` : ""
-                  }`
-              ),
-            ].join("\n")
-          : "No channels are excluded from Pixy AI.",
-        flags: EPHEMERAL,
+        embeds: [await buildListEmbed(interaction.guild.id)],
         allowedMentions: { parse: [] },
       });
       return;
     }
 
-    const channel = interaction.options.getChannel("channel");
-    if (!channel) {
-      await interaction.reply({
-        content: "Select a channel when using the add or remove action.",
-        flags: EPHEMERAL,
-      });
-      return;
-    }
-
-    if (!(await assertTicketCategoryChannel(interaction, channel))) return;
-
     if (action === "add") {
-      const reason = interaction.options.getString("reason")?.trim() || null;
-
-      await prisma.$transaction([
-        prisma.guildIgnoredChannel.upsert({
-          where: {
-            guildId_channelId: {
-              guildId: interaction.guild.id,
-              channelId: channel.id,
-            },
-          },
-          create: {
-            guildId: interaction.guild.id,
-            channelId: channel.id,
-            reason,
-          },
-          update: { reason },
-        }),
-        prisma.ticketChannel.deleteMany({
-          where: {
-            guildId: interaction.guild.id,
-            channelId: channel.id,
-          },
-        }),
-      ]);
-
+      const config = await getConfiguredTicketCategory(interaction.guild.id);
       await interaction.reply({
-        content: `<#${channel.id}> is now excluded. Pixy will not read, learn from, or reply in it.`,
+        content: config?.ticketCategoryId
+          ? `Choose a text channel inside <#${config.ticketCategoryId}> to exclude from Pixy AI.`
+          : "Configure the Pixy ticket category with `/pixy-setup` first.",
+        components: config?.ticketCategoryId ? [addChannelRow(interaction.user.id)] : [],
         flags: EPHEMERAL,
         allowedMentions: { parse: [] },
       });
@@ -148,44 +284,108 @@ module.exports = {
     }
 
     if (action === "remove") {
-      const [removed] = await prisma.$transaction([
-        prisma.guildIgnoredChannel.deleteMany({
-          where: {
-            guildId: interaction.guild.id,
-            channelId: channel.id,
-          },
-        }),
-        prisma.ticketChannel.upsert({
-          where: { channelId: channel.id },
-          create: {
-            guildId: interaction.guild.id,
-            channelId: channel.id,
-            aiEnabled: true,
-          },
-          update: {
-            guildId: interaction.guild.id,
-            aiEnabled: true,
-            closed: false,
-            status: "open",
-            closedAt: null,
-            closedByAi: false,
-          },
-        }),
-      ]);
-
       await interaction.reply({
-        content: removed.count
-          ? `<#${channel.id}> is no longer excluded from Pixy AI.`
-          : `<#${channel.id}> was not on the Pixy blacklist.`,
+        ...(await buildRemoveReply(interaction.guild, interaction.user.id)),
         flags: EPHEMERAL,
-        allowedMentions: { parse: [] },
       });
       return;
     }
 
-    await interaction.reply({
-      content: "Unsupported blacklist action.",
-      flags: EPHEMERAL,
-    });
+    await interaction.reply({ content: "Unsupported blacklist action.", flags: EPHEMERAL });
   },
+
+  selectMenuHandlers: [
+    {
+      customIdPrefix: PREFIX.ADD_CHANNEL,
+      type: "channel",
+      async execute(interaction) {
+        const [userId] = parseScoped(interaction.customId, PREFIX.ADD_CHANNEL);
+        if (!(await assertOwner(interaction, userId))) return;
+
+        const channelId = interaction.values[0];
+        const validation = await validateAddChannel(interaction.guild, channelId);
+        if (!validation.ok) {
+          await interaction.update({
+            content: validation.message,
+            embeds: [],
+            components: [addChannelRow(userId)],
+            allowedMentions: { parse: [] },
+          });
+          return;
+        }
+
+        const existing = await prisma.guildIgnoredChannel.findUnique({
+          where: { guildId_channelId: { guildId: interaction.guild.id, channelId } },
+        });
+        if (existing) {
+          await interaction.update({
+            content: `<#${channelId}> is already excluded. Choose another channel.`,
+            embeds: [],
+            components: [addChannelRow(userId)],
+            allowedMentions: { parse: [] },
+          });
+          return;
+        }
+
+        await interaction.update({
+          content: `Selected <#${channelId}>. Do you want to save a private reason?`,
+          embeds: [],
+          components: [reasonButtons(userId, channelId)],
+          allowedMentions: { parse: [] },
+        });
+      },
+    },
+    {
+      customIdPrefix: PREFIX.REMOVE_CHANNEL,
+      type: "string",
+      async execute(interaction) {
+        const [userId] = parseScoped(interaction.customId, PREFIX.REMOVE_CHANNEL);
+        if (!(await assertOwner(interaction, userId))) return;
+
+        const channelId = interaction.values[0];
+        const result = await removeBlacklistEntry(interaction.guild, channelId);
+        const content = !result.removedCount
+          ? "That channel was already removed from the Pixy blacklist."
+          : result.canReactivate
+            ? `<#${channelId}> is no longer excluded and has been reactivated for Pixy AI.`
+            : `The blacklist entry for <#${channelId}> was removed, but the channel was not reactivated because it is missing or no longer inside the configured ticket category.`;
+
+        await interaction.update({
+          content,
+          embeds: [],
+          components: [],
+          allowedMentions: { parse: [] },
+        });
+      },
+    },
+  ],
+
+  buttonHandlers: [
+    {
+      customIdPrefix: PREFIX.ADD_REASON_YES,
+      async execute(interaction) {
+        const [userId, channelId] = parseScoped(interaction.customId, PREFIX.ADD_REASON_YES);
+        if (!(await assertOwner(interaction, userId))) return;
+        await interaction.showModal(reasonModal(userId, channelId));
+      },
+    },
+    {
+      customIdPrefix: PREFIX.ADD_REASON_NO,
+      async execute(interaction) {
+        const [userId, channelId] = parseScoped(interaction.customId, PREFIX.ADD_REASON_NO);
+        await finishAdd(interaction, userId, channelId, null);
+      },
+    },
+  ],
+
+  modalHandlers: [
+    {
+      customIdPrefix: PREFIX.ADD_REASON_MODAL,
+      async execute(interaction) {
+        const [userId, channelId] = parseScoped(interaction.customId, PREFIX.ADD_REASON_MODAL);
+        const reason = cleanText(interaction.fields.getTextInputValue("reason"));
+        await finishAdd(interaction, userId, channelId, reason);
+      },
+    },
+  ],
 };
