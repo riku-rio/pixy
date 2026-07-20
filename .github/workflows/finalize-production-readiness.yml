@@ -1,0 +1,23 @@
+name: Finalize production readiness
+
+on:
+  push:
+    branches:
+      - fix/production-readiness-mysql-safety
+    paths:
+      - .github/workflows/finalize-production-readiness.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: pixy_test
+          MYSQL_USER: pixy
+          MYSQL_PASSWORD: pixy_test_password
+          MYSQL_ROOT_PASSWORD: root
