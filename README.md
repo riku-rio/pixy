@@ -23,7 +23,7 @@ Pixy intentionally has no payments, subscriptions, free trials, plan states, or 
 2. Run `/pixy-settings` and add the server's Groq API key.
 3. Choose a Groq chat model when the default is not suitable.
 4. Configure support routes with `/pixy-admins`.
-5. Exclude any non-conversation channel inside the ticket category with `/pixy-blacklist add`.
+5. Run `/pixy-blacklist action:Add`, then choose a non-conversation channel inside the configured ticket category.
 
 Pixy registers global slash commands and is not tied to one Discord guild.
 
@@ -34,8 +34,12 @@ Pixy registers global slash commands and is not tied to one Discord guild.
 - `/pixy-learn` — manage server-specific knowledge
 - `/pixy-admins` — configure escalation roles, categories, and notifications
 - `/pixy-settings` — feature flags, Groq credentials, model, and blocked terms
-- `/pixy-blacklist add|remove|list` — exclude specific channels from all Pixy AI processing
+- `/pixy-blacklist action:Add` — choose a ticket-category channel, optionally save a private reason, and exclude it from Pixy AI processing
+- `/pixy-blacklist action:Remove` — choose an existing blacklist entry and restore the channel to Pixy AI when it is still inside the configured ticket category
+- `/pixy-blacklist action:List` — show the current blacklist in an ephemeral embed
 - `/pixy-clear` — delete all stored Pixy data for the current server
+
+The blacklist command is one top-level slash command with an `action` choice. Add and Remove use private interactive menus, and List is only visible to the administrator who runs it.
 
 Custom blocked terms are added and removed through Discord modals. To remove a term, the administrator types the exact term instead of searching through paginated select menus.
 
