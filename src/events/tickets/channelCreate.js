@@ -14,19 +14,24 @@ module.exports = {
       if (channel.type !== ChannelType.GuildText) return;
 
       const config = await prisma.guildConfig.findUnique({
-        where: {
-          guildId: channel.guild.id,
-        },
+        where: { guildId: channel.guild.id },
       });
 
       if (!config?.enabled || !config.ticketCategoryId) return;
-
       if (channel.parentId !== config.ticketCategoryId) return;
 
-      await prisma.ticketChannel.upsert({
+      const ignored = await prisma.guildIgnoredChannel.findUnique({
         where: {
-          channelId: channel.id,
+          guildId_channelId: {
+            guildId: channel.guild.id,
+            channelId: channel.id,
+          },
         },
+      });
+      if (ignored) return;
+
+      await prisma.ticketChannel.upsert({
+        where: { channelId: channel.id },
         create: {
           guildId: channel.guild.id,
           channelId: channel.id,
@@ -36,6 +41,7 @@ module.exports = {
         update: {
           closed: false,
           status: "open",
+          aiEnabled: true,
           closedByAi: false,
           closedAt: null,
           renamedByAiAt: null,
@@ -56,6 +62,7 @@ module.exports = {
           "Use the menu below if you want to escalate, rename, or close this ticket.",
         ].join("\n"),
         components: buildTicketControlPanelComponents(),
+        allowedMentions: { parse: [] },
       });
     } catch (error) {
       console.error("ChannelCreate ticket handler failed:", error);

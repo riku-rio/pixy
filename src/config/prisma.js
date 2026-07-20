@@ -1,14 +1,45 @@
 const { PrismaClient } = require("@prisma/client");
-const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL,
-});
+function resolveDatabaseUrl(databaseUrl) {
+  const isTest = String(process.env.NODE_ENV || "").toLowerCase() === "test";
+  const testDatabaseUrl = String(process.env.TEST_DATABASE_URL || "").trim();
+  if (isTest && testDatabaseUrl) return testDatabaseUrl;
+  return String(databaseUrl || process.env.DATABASE_URL || "").trim();
+}
 
-const prisma = new PrismaClient({
-  adapter,
-});
+function createAdapter(databaseUrl) {
+  const rawUrl = resolveDatabaseUrl(databaseUrl);
+  if (!rawUrl) {
+    throw new Error(
+      String(process.env.NODE_ENV || "").toLowerCase() === "test"
+        ? "TEST_DATABASE_URL is required for tests. Start mysql_test with npm run db:up."
+        : "DATABASE_URL is required."
+    );
+  }
 
-module.exports = {
-  prisma,
-};
+  const url = new URL(rawUrl);
+  if (url.protocol !== "mysql:" && url.protocol !== "mariadb:") {
+    throw new Error("Database URL must use the mysql:// or mariadb:// protocol.");
+  }
+
+  const database = url.pathname.replace(/^\//, "");
+  if (!database) throw new Error("Database URL must include a database name.");
+  const isLocal = ["127.0.0.1", "localhost", "mysql", "mysql_test"].includes(url.hostname);
+
+  return new PrismaMariaDb({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 3306,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: decodeURIComponent(database),
+    connectionLimit: Number(url.searchParams.get("connection_limit") || 10),
+    connectTimeout: Number(url.searchParams.get("connect_timeout") || 5) * 1000,
+    idleTimeout: Number(url.searchParams.get("max_idle_connection_lifetime") || 300),
+    allowPublicKeyRetrieval: isLocal,
+  });
+}
+
+const prisma = new PrismaClient({ adapter: createAdapter() });
+
+module.exports = { createAdapter, prisma, resolveDatabaseUrl };
