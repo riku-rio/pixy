@@ -6,6 +6,7 @@ const {
   StringSelectMenuBuilder,
   EmbedBuilder,
 } = require("discord.js");
+const { createStringSelectMenus } = require("../utils/selectMenuHelper");
 
 const EPHEMERAL = 64;
 const GROQ_KEYS_URL = "https://console.groq.com/keys";
@@ -82,12 +83,11 @@ async function assertOwner(interaction, userId) {
 }
 
 function topicMenu(userId) {
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(scoped(PREFIX.NAV, userId))
-      .setPlaceholder("Choose a help topic...")
-      .addOptions(...TOPICS)
-  );
+  return createStringSelectMenus({
+    customId: scoped(PREFIX.NAV, userId),
+    placeholder: "Choose a help topic...",
+    options: TOPICS,
+  });
 }
 
 function navigation(userId) {
@@ -120,7 +120,7 @@ function home(userId) {
   return {
     content: null,
     embeds: [embed],
-    components: [topicMenu(userId), navigation(userId)],
+    components: [...topicMenu(userId), navigation(userId)],
   };
 }
 
@@ -155,7 +155,7 @@ function quickStart(userId) {
   return {
     content: null,
     embeds: [embed],
-    components: [topicMenu(userId), navigation(userId)],
+    components: [...topicMenu(userId), navigation(userId)],
   };
 }
 
@@ -204,7 +204,7 @@ function groq(userId) {
   return {
     content: null,
     embeds: [embed],
-    components: [topicMenu(userId), links, navigation(userId)],
+    components: [...topicMenu(userId), links, navigation(userId)],
   };
 }
 
@@ -248,7 +248,7 @@ function features(userId) {
   return {
     content: null,
     embeds: [embed],
-    components: [topicMenu(userId), navigation(userId)],
+    components: [...topicMenu(userId), navigation(userId)],
   };
 }
 
@@ -293,7 +293,7 @@ function commands(userId) {
   return {
     content: null,
     embeds: [embed],
-    components: [topicMenu(userId), navigation(userId)],
+    components: [...topicMenu(userId), navigation(userId)],
   };
 }
 
@@ -333,7 +333,7 @@ function troubleshooting(userId) {
   return {
     content: null,
     embeds: [embed],
-    components: [topicMenu(userId), navigation(userId)],
+    components: [...topicMenu(userId), navigation(userId)],
   };
 }
 
@@ -365,9 +365,14 @@ module.exports = {
       customIdPrefix: PREFIX.NAV,
       type: "string",
       async execute(interaction) {
-        const userId = interaction.customId.slice(PREFIX.NAV.length);
+        const userId = interaction.customId.slice(PREFIX.NAV.length).split(":")[0];
         if (!(await assertOwner(interaction, userId))) return;
-        await interaction.update(render(interaction.values[0], userId));
+        const selected = interaction.values[0];
+        if (selected === "reset") {
+          await interaction.update(render(PAGES.HOME, userId));
+          return;
+        }
+        await interaction.update(render(selected, userId));
       },
     },
   ],

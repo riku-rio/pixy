@@ -28,6 +28,7 @@ const {
 const {
   TICKET_ACTIONS,
 } = require("../utils/tickets/actions/ticketActionTypes");
+const { createStringSelectMenus } = require("../utils/selectMenuHelper");
 
 const EPHEMERAL = 64;
 
@@ -106,30 +107,30 @@ function buildScopedId(prefix, interaction, extra = "") {
 }
 
 function buildTicketControlPanelComponents() {
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId(ACTION_SELECT_ID)
-    .setPlaceholder("Select a ticket action...")
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Escalate to Human")
-        .setDescription("Ask a support role to review this ticket.")
-        .setEmoji("🤝")
-        .setValue("escalate"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Rename Ticket")
-        .setDescription("Set a clearer name for this ticket.")
-        .setEmoji("✏️")
-        .setValue("rename"),
-      new StringSelectMenuOptionBuilder()
-        .setLabel("Close Ticket")
-        .setDescription("Close and delete this ticket after confirmation.")
-        .setEmoji("🔒")
-        .setValue("close")
-    );
-
-  return [new ActionRowBuilder().addComponents(selectMenu)];
+  return createStringSelectMenus({
+    customId: ACTION_SELECT_ID,
+    placeholder: "Select a ticket action...",
+    options: [
+      {
+        label: "Escalate to Human",
+        description: "Ask a support role to review this ticket.",
+        value: "escalate",
+        emoji: "🤝",
+      },
+      {
+        label: "Rename Ticket",
+        description: "Set a clearer name for this ticket.",
+        value: "rename",
+        emoji: "✏️",
+      },
+      {
+        label: "Close Ticket",
+        description: "Close and delete this ticket after confirmation.",
+        value: "close",
+        emoji: "🔒",
+      },
+    ],
+  });
 }
 
 function buildCloseConfirmComponents(interaction) {
@@ -294,22 +295,17 @@ async function getConfiguredAdminRoutes(guild) {
 }
 
 function buildConfiguredRoleSelectComponents(interaction, routes) {
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId(buildScopedId(ESCALATE_ROLE_SELECT_PREFIX, interaction))
-    .setPlaceholder("Choose the support role...")
-    .setMinValues(1)
-    .setMaxValues(1);
+  const options = routes.map((route) => ({
+    label: truncateText(route.role.name, 100),
+    description: truncateText(route.description, 100),
+    value: route.roleId,
+  }));
 
-  routes.slice(0, 25).forEach((route) => {
-    selectMenu.addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel(truncateText(route.role.name, 100))
-        .setDescription(truncateText(route.description, 100))
-        .setValue(route.roleId)
-    );
+  return createStringSelectMenus({
+    customId: buildScopedId(ESCALATE_ROLE_SELECT_PREFIX, interaction),
+    placeholder: "Choose the support role...",
+    options,
   });
-
-  return [new ActionRowBuilder().addComponents(selectMenu)];
 }
 
 async function runValidatedActionFromInteraction({
@@ -922,6 +918,14 @@ module.exports = {
       async execute(interaction) {
         const action = interaction.values?.[0];
 
+        if (action === "reset") {
+          await interaction.reply({
+            content: "Selection reset.",
+            flags: EPHEMERAL,
+          });
+          return;
+        }
+
         const ticket = await getOpenTicket(interaction);
 
         if (!ticket) {
@@ -974,6 +978,14 @@ module.exports = {
         if (!(await assertScopedInteraction(interaction, userId, channelId))) return;
 
         const roleId = interaction.values?.[0];
+
+        if (roleId === "reset") {
+          await interaction.reply({
+            content: "Support role selection reset.",
+            flags: EPHEMERAL,
+          });
+          return;
+        }
 
         const routes = await getConfiguredAdminRoutes(interaction.guild);
         const route = routes.find((item) => item.roleId === roleId);
@@ -1230,4 +1242,3 @@ module.exports = {
     },
   ],
 };
-
