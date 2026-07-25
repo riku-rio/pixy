@@ -13,6 +13,7 @@ const {
   EmbedBuilder,
 } = require("discord.js");
 const { prisma } = require("../config/prisma");
+const { createStringSelectMenus } = require("../utils/selectMenuHelper");
 
 const EPHEMERAL = 64;
 const PREFIX = Object.freeze({
@@ -166,7 +167,7 @@ async function buildRemoveReply(guild, userId) {
   const entries = await prisma.guildIgnoredChannel.findMany({
     where: { guildId: guild.id },
     orderBy: { createdAt: "asc" },
-    take: 25,
+    take: 120,
   });
 
   if (!entries.length) {
@@ -182,16 +183,15 @@ async function buildRemoveReply(guild, userId) {
     };
   });
 
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId(scoped(PREFIX.REMOVE_CHANNEL, userId))
-    .setPlaceholder("Choose a blacklisted channel...")
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(options);
+  const components = createStringSelectMenus({
+    customId: scoped(PREFIX.REMOVE_CHANNEL, userId),
+    placeholder: "Choose a blacklisted channel...",
+    options,
+  });
 
   return {
     content: "Choose a channel to restore to Pixy AI.",
-    components: [new ActionRowBuilder().addComponents(menu)],
+    components,
   };
 }
 
@@ -359,6 +359,11 @@ module.exports = {
         await acknowledgeUpdate(interaction);
 
         const channelId = interaction.values[0];
+        if (channelId === "reset") {
+          await editPanel(interaction, await buildRemoveReply(interaction.guild, userId));
+          return;
+        }
+
         const result = await removeBlacklistEntry(interaction.guild, channelId);
         const content = !result.removedCount
           ? "That channel was already removed from the Pixy blacklist."

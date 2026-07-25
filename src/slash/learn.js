@@ -12,6 +12,7 @@ const {
 } = require("discord.js");
 
 const { prisma } = require("../config/prisma");
+const { createStringSelectMenus } = require("../utils/selectMenuHelper");
 
 const EPHEMERAL = 64;
 const PAGE_SIZE = 10;
@@ -687,24 +688,19 @@ module.exports = {
             });
           });
 
-          const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId(`${DELETE_SELECT_PREFIX}${interaction.user.id}`)
-            .setPlaceholder("Choose the item to delete")
-            .setMinValues(1)
-            .setMaxValues(1)
-            .addOptions(
-              matches.map((item) => ({
-                label: truncateText(item.type === "freeform" ? item.title : item.question, 90),
-                description: `${formatKnowledgeType(item.type)} • ID: ${shortId(item.id)}`,
-                value: item.id,
-              }))
-            );
-
-          const row = new ActionRowBuilder().addComponents(selectMenu);
+          const rows = createStringSelectMenus({
+            customId: `${DELETE_SELECT_PREFIX}${interaction.user.id}`,
+            placeholder: "Choose the item to delete",
+            options: matches.map((item) => ({
+              label: truncateText(item.type === "freeform" ? item.title : item.question, 90),
+              description: `${formatKnowledgeType(item.type)} • ID: ${shortId(item.id)}`,
+              value: item.id,
+            })),
+          });
 
           await interaction.reply({
             embeds: [embed],
-            components: [row],
+            components: rows,
             flags: EPHEMERAL,
           });
           return;
@@ -806,6 +802,16 @@ module.exports = {
         }
 
         const itemId = interaction.values?.[0];
+        const respond = createResponder(interaction);
+
+        if (itemId === "reset") {
+          await respond({
+            content: "Selection reset. Deletion cancelled.",
+            embeds: [],
+            components: [],
+          });
+          return;
+        }
 
         const item = await prisma.learnedAnswer.findFirst({
           where: {
@@ -813,8 +819,6 @@ module.exports = {
             guildId: interaction.guild.id,
           },
         });
-
-        const respond = createResponder(interaction);
 
         if (!item) {
           await respond({

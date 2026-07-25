@@ -15,6 +15,7 @@ const { defaultAiConfig, getGuildAiConfig, getOrCreateGuildSetting } = require("
 const { DEFAULT_GROQ_MODEL, validateGroqApiKey, validateGroqChatModel } = require("../ai/groqModels");
 const { encryptCredential } = require("../security/credentialEncryption");
 const { getBlockedTermsStats, addGuildBlockedTerm, removeGuildBlockedTerm } = require("../utils/blockedTerms");
+const { createStringSelectMenus } = require("../utils/selectMenuHelper");
 
 const EPHEMERAL = 64;
 const PREFIX = Object.freeze({
@@ -70,29 +71,31 @@ async function renderHome(guildId, userId) {
       { name: "Groq API", value: setting.groqApiKeyEncrypted ? "Configured" : "Required", inline: true },
       { name: "Model", value: `\`${setting.aiModel || DEFAULT_GROQ_MODEL}\``, inline: true }
     );
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId(scoped(PREFIX.NAV, userId))
-    .setPlaceholder("Select a settings category...")
-    .addOptions(
+  const menus = createStringSelectMenus({
+    customId: scoped(PREFIX.NAV, userId),
+    placeholder: "Select a settings category...",
+    options: [
       { label: "Features", description: "Enable or disable Pixy's server features", value: PAGES.FEATURES, emoji: "📝" },
       { label: "Escalation", description: "View escalation configuration", value: PAGES.ESCALATION, emoji: "🚨" },
       { label: "AI API", description: "Manage the Groq API key and model", value: PAGES.AIAPI, emoji: "🔑" },
-      { label: "Bad Words", description: "Manage custom blocked terms", value: PAGES.BADWORDS, emoji: "🛡️" }
-    );
-  return { content: null, embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] };
+      { label: "Bad Words", description: "Manage custom blocked terms", value: PAGES.BADWORDS, emoji: "🛡️" },
+    ],
+  });
+  return { content: null, embeds: [embed], components: [...menus] };
 }
 
 async function renderFeatures(guildId, userId) {
   const setting = await getOrCreateGuildSetting(guildId);
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId(scoped(PREFIX.TOGGLE, userId))
-    .setPlaceholder("Select a feature to toggle...")
-    .addOptions(...FEATURES.map((feature) => ({
+  const menus = createStringSelectMenus({
+    customId: scoped(PREFIX.TOGGLE, userId),
+    placeholder: "Select a feature to toggle...",
+    options: FEATURES.map((feature) => ({
       label: `Toggle ${feature.label}`,
       description: feature.description,
       value: feature.field,
       emoji: feature.emoji,
-    })));
+    })),
+  });
   return {
     content: null,
     embeds: [new EmbedBuilder()
@@ -100,7 +103,7 @@ async function renderFeatures(guildId, userId) {
       .setColor(0x5865f2)
       .setDescription("Disabled features are blocked at execution time, including actions requested by the AI.")
       .addFields(...FEATURES.map(({ field, label }) => ({ name: label, value: setting[field] ? "✅ Enabled" : "❌ Disabled", inline: true })))],
-    components: [new ActionRowBuilder().addComponents(menu), navigation(userId)],
+    components: [...menus, navigation(userId)],
   };
 }
 
@@ -169,14 +172,15 @@ async function renderBadWords(guildId, userId) {
   if (stats.guildBlockedTerms.length) {
     embed.addFields({ name: "Custom list preview", value: `\`${stats.guildBlockedTerms.slice(0, 20).join(", ")}\`` });
   }
-  const actionMenu = new StringSelectMenuBuilder()
-    .setCustomId(scoped(PREFIX.BADWORD_ACTION, userId))
-    .setPlaceholder("Select an action...")
-    .addOptions(
+  const actionMenus = createStringSelectMenus({
+    customId: scoped(PREFIX.BADWORD_ACTION, userId),
+    placeholder: "Select an action...",
+    options: [
       { label: "Add Custom Term", description: "Add a term to this server's blocked list", value: "add", emoji: "🟢" },
-      { label: "Remove Custom Term", description: "Type the exact term to remove", value: "remove", emoji: "🗑️" }
-    );
-  return { content: null, embeds: [embed], components: [new ActionRowBuilder().addComponents(actionMenu), navigation(userId)] };
+      { label: "Remove Custom Term", description: "Type the exact term to remove", value: "remove", emoji: "🗑️" },
+    ],
+  });
+  return { content: null, embeds: [embed], components: [...actionMenus, navigation(userId)] };
 }
 
 async function render(page, guildId, userId) {
@@ -209,19 +213,24 @@ module.exports = {
       customIdPrefix: PREFIX.NAV,
       type: "string",
       async execute(interaction) {
-        const userId = interaction.customId.slice(PREFIX.NAV.length);
+        const userId = interaction.customId.slice(PREFIX.NAV.length).split(":")[0];
         if (!(await assertOwner(interaction, userId))) return;
         await interaction.deferUpdate();
-        await interaction.editReply(await render(interaction.values[0], interaction.guild.id, userId));
+        const page = interaction.values[0] === "reset" ? PAGES.HOME : interaction.values[0];
+        await interaction.editReply(await render(page, interaction.guild.id, userId));
       },
     },
     {
       customIdPrefix: PREFIX.TOGGLE,
       type: "string",
       async execute(interaction) {
-        const userId = interaction.customId.slice(PREFIX.TOGGLE.length);
+        const userId = interaction.customId.slice(PREFIX.TOGGLE.length).split(":")[0];
         if (!(await assertOwner(interaction, userId))) return;
         const field = interaction.values[0];
+        if (field === "reset") {
+          await interaction.update(await render(PAGES.FEATURES, interaction.guild.id, userId));
+          return;
+        }
         if (!FEATURE_FIELDS.has(field)) return;
         const setting = await getOrCreateGuildSetting(interaction.guild.id);
         const enabled = !setting[field];
@@ -236,9 +245,14 @@ module.exports = {
       customIdPrefix: PREFIX.BADWORD_ACTION,
       type: "string",
       async execute(interaction) {
-        const userId = interaction.customId.slice(PREFIX.BADWORD_ACTION.length);
+        const userId = interaction.customId.slice(PREFIX.BADWORD_ACTION.length).split(":")[0];
         if (!(await assertOwner(interaction, userId))) return;
-        const remove = interaction.values[0] === "remove";
+        const val = interaction.values[0];
+        if (val === "reset") {
+          await interaction.update(await render(PAGES.BADWORDS, interaction.guild.id, userId));
+          return;
+        }
+        const remove = val === "remove";
         if (remove) {
           const stats = await getBlockedTermsStats(interaction.guild.id);
           if (!stats.guildBlockedTerms.length) return interaction.update({ content: "No custom terms to remove.", embeds: [], components: [navigation(userId)] });
