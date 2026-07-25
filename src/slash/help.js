@@ -3,7 +3,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
   EmbedBuilder,
 } = require("discord.js");
 const { createStringSelectMenus } = require("../utils/selectMenuHelper");
@@ -367,12 +366,12 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.NAV.length).split(":")[0];
         if (!(await assertOwner(interaction, userId))) return;
+
+        await interaction.deferUpdate();
+
         const selected = interaction.values[0];
-        if (selected === "reset") {
-          await interaction.update(render(PAGES.HOME, userId));
-          return;
-        }
-        await interaction.update(render(selected, userId));
+        const page = selected === "reset" ? PAGES.HOME : selected;
+        await interaction.editReply(render(page, userId));
       },
     },
   ],
@@ -383,7 +382,9 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.HOME.length);
         if (!(await assertOwner(interaction, userId))) return;
-        await interaction.update(render(PAGES.HOME, userId));
+
+        await interaction.deferUpdate();
+        await interaction.editReply(render(PAGES.HOME, userId));
       },
     },
     {
@@ -391,7 +392,9 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.CLOSE.length);
         if (!(await assertOwner(interaction, userId))) return;
-        await interaction.update({
+
+        await interaction.deferUpdate();
+        await interaction.editReply({
           content: "Help panel closed.",
           embeds: [],
           components: [],
