@@ -4,7 +4,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
   EmbedBuilder,
   ModalBuilder,
   TextInputBuilder,
@@ -191,6 +190,14 @@ async function render(page, guildId, userId) {
   return renderHome(guildId, userId);
 }
 
+async function renderWithNotice(page, guildId, userId, content) {
+  return {
+    ...(await render(page, guildId, userId)),
+    content,
+    allowedMentions: { parse: [] },
+  };
+}
+
 function singleInputModal({ customId, title, inputId, label, placeholder, maxLength }) {
   const input = new TextInputBuilder().setCustomId(inputId).setLabel(label).setStyle(TextInputStyle.Short).setRequired(true);
   if (placeholder) input.setPlaceholder(placeholder);
@@ -255,7 +262,10 @@ module.exports = {
         const remove = val === "remove";
         if (remove) {
           const stats = await getBlockedTermsStats(interaction.guild.id);
-          if (!stats.guildBlockedTerms.length) return interaction.update({ content: "No custom terms to remove.", embeds: [], components: [navigation(userId)] });
+          if (!stats.guildBlockedTerms.length) {
+            await interaction.update(await renderWithNotice(PAGES.BADWORDS, interaction.guild.id, userId, "No custom terms to remove."));
+            return;
+          }
         }
         await interaction.showModal(singleInputModal({
           customId: scoped(remove ? PREFIX.BADWORD_REMOVE_MODAL : PREFIX.BADWORD_ADD_MODAL, userId),
@@ -283,16 +293,17 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.API_MODAL.length);
         if (!(await assertOwner(interaction, userId))) return;
-        await interaction.deferReply({ flags: EPHEMERAL });
+        await interaction.deferUpdate();
         const apiKey = cleanText(interaction.fields.getTextInputValue("groq_api_key"));
         try {
           const validation = await validateGroqApiKey(apiKey);
           const encrypted = encryptCredential(apiKey, { guildId: interaction.guild.id, credentialType: "groq-api-key" });
           const current = await getOrCreateGuildSetting(interaction.guild.id);
           await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { groqApiKeyEncrypted: encrypted, aiModel: current.aiModel && validation.modelIds.includes(current.aiModel) ? current.aiModel : null } });
-          await interaction.editReply({ content: "Groq API key validated, encrypted, and saved." });
+          await interaction.editReply(await renderWithNotice(PAGES.AIAPI, interaction.guild.id, userId, "✅ Groq API key validated, encrypted, and saved."));
         } catch (error) {
-          await interaction.editReply({ content: error?.status === 401 ? "Groq rejected that API key." : "Pixy could not validate that API key." });
+          const message = error?.status === 401 ? "Groq rejected that API key." : "Pixy could not validate that API key.";
+          await interaction.editReply(await renderWithNotice(PAGES.AIAPI, interaction.guild.id, userId, `❌ ${message}`));
         }
       },
     },
@@ -301,15 +312,15 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.MODEL_MODAL.length);
         if (!(await assertOwner(interaction, userId))) return;
-        await interaction.deferReply({ flags: EPHEMERAL });
+        await interaction.deferUpdate();
         const modelId = cleanText(interaction.fields.getTextInputValue("groq_model"));
         try {
           const config = await getGuildAiConfig(interaction.guild.id, { requireApiKey: true });
           await validateGroqChatModel({ apiKey: config.groq.apiKey, modelId });
           await prisma.guildSetting.update({ where: { guildId: interaction.guild.id }, data: { aiModel: modelId } });
-          await interaction.editReply({ content: `Model verified and saved: \`${modelId}\`.` });
+          await interaction.editReply(await renderWithNotice(PAGES.AIAPI, interaction.guild.id, userId, `✅ Model verified and saved: \`${modelId}\`.`));
         } catch (error) {
-          await interaction.editReply({ content: error?.message || "Pixy could not verify that model." });
+          await interaction.editReply(await renderWithNotice(PAGES.AIAPI, interaction.guild.id, userId, `❌ ${error?.message || "Pixy could not verify that model."}`));
         }
       },
     },
@@ -318,8 +329,10 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.BADWORD_ADD_MODAL.length);
         if (!(await assertOwner(interaction, userId))) return;
+        await interaction.deferUpdate();
         const result = await addGuildBlockedTerm(interaction.guild.id, cleanText(interaction.fields.getTextInputValue("word")));
-        await interaction.reply({ content: result.ok ? "Custom term added." : `Could not add that term: ${result.code}.`, flags: EPHEMERAL });
+        const message = result.ok ? "✅ Custom term added." : `❌ Could not add that term: ${result.code}.`;
+        await interaction.editReply(await renderWithNotice(PAGES.BADWORDS, interaction.guild.id, userId, message));
       },
     },
     {
@@ -327,8 +340,10 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.BADWORD_REMOVE_MODAL.length);
         if (!(await assertOwner(interaction, userId))) return;
+        await interaction.deferUpdate();
         const result = await removeGuildBlockedTerm(interaction.guild.id, cleanText(interaction.fields.getTextInputValue("word")));
-        await interaction.reply({ content: result?.ok === false ? `Could not remove that term: ${result.code}.` : "Custom term removed.", flags: EPHEMERAL });
+        const message = result?.ok === false ? `❌ Could not remove that term: ${result.code}.` : "✅ Custom term removed.";
+        await interaction.editReply(await renderWithNotice(PAGES.BADWORDS, interaction.guild.id, userId, message));
       },
     },
   ],
