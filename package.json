@@ -8,6 +8,7 @@
     "start": "node index.js",
     "db:up": "docker compose up -d mysql mysql_test",
     "db:down": "docker compose down",
+    "db:clear": "node scripts/clear-database.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
