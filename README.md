@@ -59,9 +59,60 @@ Custom blocked terms are added and removed through Discord modals. To remove a t
 - MySQL 8.4 locally and in production
 - Groq SDK
 
+## Environment variables
+
+Create `.env` from `.env.example` and fill in the real values:
+
+```env
+NODE_ENV=production
+DISCORD_TOKEN=
+DISCORD_CLIENT_ID=
+PREFIX=^
+
+# Database - MySQL
+
+DATABASE_URL="mysql://pixy:pixy_local_password@127.0.0.1:3306/pixy"
+
+# Credential Encryption
+
+PIXY_CREDENTIAL_ENCRYPTION_KEY=
+```
+
+### `NODE_ENV`
+
+Use `NODE_ENV=development` while developing locally and `NODE_ENV=production` for a deployed bot. The non-standard value `dev` is not recommended; use the full value `development`.
+
+The application only treats the exact value `production` as production mode. Any other value is considered non-production behavior.
+
+### Test database
+
+`TEST_DATABASE_URL` is optional for production and can be omitted from the production `.env`. It is required when running the automated test suite against the separate test database:
+
+```env
+TEST_DATABASE_URL="mysql://pixy:pixy_test_password@127.0.0.1:3307/pixy_test"
+```
+
+When `NODE_ENV=test`, the database adapter uses `TEST_DATABASE_URL` when it is present.
+
+### Credential encryption key
+
+`PIXY_CREDENTIAL_ENCRYPTION_KEY` must be one stable, base64-encoded 32-byte key. Generate it in PowerShell:
+
+```powershell
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes)
+```
+
+Back up the encryption key separately from the MySQL backup. A database backup without the matching encryption key cannot recover stored guild Groq credentials.
+
+Do not change the encryption key while encrypted guild credentials still exist. Rotating it makes data encrypted with the previous key unreadable. It is safe to generate a new key after clearing the application database or after confirming that no encrypted credentials remain.
+
+Never commit Discord tokens, API keys, production database credentials, database backups, or encryption keys.
+
 ## Local development with Docker
 
-Create `.env` from `.env.example`, then start both development and test databases:
+For local development, set `NODE_ENV=development` and add `TEST_DATABASE_URL` to `.env`, then start the development and test databases:
 
 ```powershell
 npm run db:up
@@ -91,49 +142,48 @@ npm run db:down
 
 The application and tests use MySQL so local behavior matches production. SQLite is not used as a development substitute.
 
+## Clear all application data
+
+Use the destructive database-clear command when preparing a fresh development server, replacing a test bot, resetting a deployment, or starting with an empty application database:
+
+```powershell
+npm run db:clear -- --confirm
+```
+
+The required `--confirm` flag prevents accidental execution. The command:
+
+- Deletes rows from every application table discovered in the current MySQL database
+- Handles foreign-key relationships safely
+- Resets auto-increment counters where applicable
+- Preserves the database schema
+- Preserves Prisma's `_prisma_migrations` table and migration history
+- Automatically includes application tables added by future Prisma models
+
+This operation is destructive and cannot be undone without a backup. Stop the bot before clearing the database so it cannot write new records during the reset.
+
+After clearing the database, a new `PIXY_CREDENTIAL_ENCRYPTION_KEY` may be generated safely because no encrypted guild credentials remain.
+
 ## Production deployment
 
-Set a production `DATABASE_URL` using the standard MySQL URL format, then run:
+Set `NODE_ENV=production`, provide a production `DATABASE_URL`, and keep `TEST_DATABASE_URL` out of the production environment unless production tests intentionally require it.
+
+Deploy with:
 
 ```powershell
 npm ci
 npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:seed
-npm test
 npm start
 ```
 
-Use `prisma migrate deploy` through `npm run prisma:migrate` in production. Do not run `prisma migrate dev` against production.
-
-## Environment variables
-
-```env
-# Bot
-NODE_ENV=development
-DISCORD_TOKEN=
-DISCORD_CLIENT_ID=
-PREFIX=^
-
-# MySQL
-DATABASE_URL="mysql://pixy:pixy_local_password@127.0.0.1:3306/pixy"
-TEST_DATABASE_URL="mysql://pixy:pixy_test_password@127.0.0.1:3307/pixy_test"
-
-# Credential Encryption
-PIXY_CREDENTIAL_ENCRYPTION_KEY=
-```
-
-`PIXY_CREDENTIAL_ENCRYPTION_KEY` must be one stable, base64-encoded 32-byte key. Generate it in PowerShell:
+Run tests separately when the deployment environment has a configured test database:
 
 ```powershell
-$bytes = New-Object byte[] 32
-[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-[Convert]::ToBase64String($bytes)
+npm test
 ```
 
-Back up the encryption key separately from the MySQL backup. A database backup without the matching encryption key cannot recover stored guild Groq credentials. Losing or changing the key makes those credentials undecryptable.
-
-Never commit Discord tokens, API keys, production database credentials, database backups, or encryption keys.
+Use `prisma migrate deploy` through `npm run prisma:migrate` in production. Do not run `prisma migrate dev` against production.
 
 ## Data handling
 
