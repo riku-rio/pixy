@@ -16,6 +16,44 @@ function getNotificationChannelName() {
     .replace(/^[-_]+|[-_]+$/g, "") || "pixy-notifications";
 }
 
+function cleanText(value, maxLength = 1000) {
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, Math.max(1, Number(maxLength || 1000)));
+}
+
+function formatSummaryValue(value, fallback = "Not provided.") {
+  if (Array.isArray(value)) {
+    const items = value.map((item) => cleanText(item, 300)).filter(Boolean);
+    return items.length ? items.map((item) => `• ${item}`).join("\n") : fallback;
+  }
+
+  const text = cleanText(value, 1000);
+  return text || fallback;
+}
+
+async function getRecentTicketContext(ticketChannel) {
+  try {
+    const messages = await ticketChannel.messages.fetch({ limit: 20 });
+    const recent = Array.from(messages.values())
+      .filter((message) => !message.author?.bot && !message.webhookId)
+      .filter((message) => cleanText(message.content, 500).length > 0)
+      .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+      .slice(-6)
+      .map((message) => {
+        const author = message.member?.displayName || message.author?.username || "User";
+        return `• **${cleanText(author, 80)}:** ${cleanText(message.content, 350)}`;
+      });
+
+    return recent.length ? recent.join("\n") : "No recent user messages were available.";
+  } catch {
+    return "Recent ticket messages could not be loaded.";
+  }
+}
+
 async function getBotMember(guild) {
   if (!guild) return null;
 
@@ -178,22 +216,51 @@ async function sendEscalationNotification({
   routeId,
   requestedBy,
   newName,
+  summary,
 }) {
-  const content = [
+  const recentContext = await getRecentTicketContext(ticketChannel);
+  const details = summary && typeof summary === "object" && !Array.isArray(summary)
+    ? summary
+    : {};
+
+  const sections = [
     "🚨 **Ticket Escalated**",
     "",
     `**Ticket Channel:** <#${ticketChannel.id}>`,
     `**Support Role:** <@&${role.id}>`,
     `**Support Team:** ${role.name}`,
-    `**Reason:** ${reason || "No reason provided."}`,
     `**New Ticket Name:** ${newName || ticketChannel.name}`,
     routeId ? `**Route ID:** \`${routeId}\`` : null,
     requestedBy
       ? `**Requested By:** ${requestedBy.tag || requestedBy.username || requestedBy.id} (${requestedBy.id})`
       : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
+    "",
+    "**User Issue**",
+    formatSummaryValue(details.userIssue || details.issue || reason, "No issue summary was provided."),
+    "",
+    "**Environment**",
+    formatSummaryValue(details.environment),
+    "",
+    "**Already Checked**",
+    formatSummaryValue(details.alreadyChecked || details.troubleshooting),
+    "",
+    "**Observed Error**",
+    formatSummaryValue(details.observedError || details.error),
+    "",
+    "**Likely Cause**",
+    formatSummaryValue(details.likelyCause || details.cause, "Unknown — staff review is required."),
+    "",
+    "**Requires Staff**",
+    `Yes — ${formatSummaryValue(details.requiresStaff || reason, "Human review was requested.")}`,
+    "",
+    "**Recent Ticket Context**",
+    recentContext,
+  ].filter(Boolean);
+
+  let content = sections.join("\n");
+  if (content.length > 1950) {
+    content = `${content.slice(0, 1947).trim()}...`;
+  }
 
   return notificationChannel.send({
     content,

@@ -10,7 +10,7 @@ const {
 const SLASH_COMMAND_PREFIX = "pixy-";
 
 function getAllJsFiles(dirPath, arrayOfFiles = []) {
-  const files = fs.readdirSync(dirPath);
+  const files = fs.readdirSync(dirPath).sort((a, b) => a.localeCompare(b));
 
   for (const file of files) {
     const fullPath = path.join(dirPath, file);

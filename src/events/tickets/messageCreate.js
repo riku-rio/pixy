@@ -39,8 +39,24 @@ function t(lang, key, vars = {}) {
 const cleanInput = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const detectUserLanguage = (value) => /[\u0600-\u06FF]/.test(String(value || "")) ? "ar" : "en";
 
+function isTicketAiToggleMention(message) {
+  const botId = message.client.user?.id;
+  if (!botId) return false;
+
+  const normalized = String(message.content || "").trim().toLowerCase();
+  return [
+    `<@${botId}>`,
+    `<@!${botId}>`,
+    `<@${botId}> on`,
+    `<@!${botId}> on`,
+    `<@${botId}> off`,
+    `<@!${botId}> off`,
+  ].includes(normalized);
+}
+
 function shouldIgnoreMessage(message) {
   if (!message?.guild || !message.channel || message.author?.bot || message.webhookId) return true;
+  if (isTicketAiToggleMention(message)) return true;
   const content = cleanInput(message.content);
   return !content || content.startsWith("/") || content.startsWith("^");
 }

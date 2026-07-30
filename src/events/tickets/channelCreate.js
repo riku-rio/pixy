@@ -1,9 +1,9 @@
 const { Events, ChannelType } = require("discord.js");
 const { prisma } = require("../../config/prisma");
-
 const {
-  buildTicketControlPanelComponents,
-} = require("../../components/ticketControls");
+  buildTicketControlContent,
+  buildCombinedTicketControlComponents,
+} = require("../../components/ticketAiControls");
 
 module.exports = {
   name: Events.ChannelCreate,
@@ -37,6 +37,7 @@ module.exports = {
           channelId: channel.id,
           closed: false,
           status: "open",
+          aiEnabled: true,
         },
         update: {
           closed: false,
@@ -55,13 +56,8 @@ module.exports = {
       });
 
       await channel.send({
-        content: [
-          "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket.",
-          "",
-          "**Ticket Actions**",
-          "Use the menu below if you want to escalate, rename, or close this ticket.",
-        ].join("\n"),
-        components: buildTicketControlPanelComponents(),
+        content: buildTicketControlContent(true),
+        components: buildCombinedTicketControlComponents(true),
         allowedMentions: { parse: [] },
       });
     } catch (error) {

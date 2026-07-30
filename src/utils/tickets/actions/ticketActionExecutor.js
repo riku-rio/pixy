@@ -24,6 +24,14 @@ async function sendTicketEscalationReply({ message, roleName, text }) {
   return true;
 }
 
+async function refreshEscalatedTicketControls(channel) {
+  const {
+    refreshTicketControlMessage,
+  } = require("../../../components/ticketAiControls");
+
+  await refreshTicketControlMessage(channel, false);
+}
+
 async function executeRenameTicket({ message, validation }) {
   await message.channel.setName(validation.data.name, `Pixy AI safe action: rename_ticket requested by ${message.author?.tag || "user"}`);
   await prisma.ticketChannel.update({
@@ -81,6 +89,7 @@ async function executeEscalateTicket({ actionRequest, message, validation }) {
       routeId,
       requestedBy: message.author,
       newName: name,
+      summary: actionRequest.data?.summary,
     });
 
     await prisma.ticketChannel.update({
@@ -91,6 +100,7 @@ async function executeEscalateTicket({ actionRequest, message, validation }) {
         escalatedRoleId: roleId,
         escalationReason: reason || null,
         escalationNotificationMessageId: notificationMessage.id,
+        aiEnabled: false,
         lastAiAction: TICKET_ACTIONS.ESCALATE_TICKET,
         lastAiActionAt: new Date(),
         lastAiReplyAt: new Date(),
@@ -98,6 +108,11 @@ async function executeEscalateTicket({ actionRequest, message, validation }) {
     });
 
     const replySent = await sendTicketEscalationReply({ message, roleName: roleName || role.name, text: actionRequest.text });
+
+    await refreshEscalatedTicketControls(message.channel).catch((error) => {
+      console.error("Failed to refresh ticket controls after escalation:", error);
+    });
+
     return { ok: true, replySent, channelDeleted: false };
   } catch (error) {
     if (message.channel.name !== originalName) {

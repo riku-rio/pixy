@@ -213,10 +213,6 @@ module.exports = {
     const content = message.content.slice(prefixData.prefix.length).trim();
 
     if (!content) {
-      if (prefixData.usedMentionPrefix) {
-        await message.reply(`My prefix is \`${prefixData.rawPrefix}\`.`);
-      }
-
       return;
     }
 
