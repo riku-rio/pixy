@@ -77,7 +77,7 @@ async function ensureGuildConfig(guildId) {
       data: {
         guildId,
         enabled: true,
-        maxLearnedItems: 20,
+        maxLearnedItems: 50,
       },
     });
   }
@@ -509,7 +509,7 @@ module.exports = {
         }
 
         const config = await ensureGuildConfig(interaction.guild.id);
-        const maxItems = Number(config.maxLearnedItems || 20);
+        const maxItems = Number(config.maxLearnedItems || 50);
 
         if (maxItems <= 0) {
           await interaction.reply({
@@ -595,7 +595,7 @@ module.exports = {
         }
 
         const config = await ensureGuildConfig(interaction.guild.id);
-        const maxItems = Number(config.maxLearnedItems || 20);
+        const maxItems = Number(config.maxLearnedItems || 50);
 
         if (maxItems <= 0) {
           await interaction.reply({

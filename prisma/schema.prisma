@@ -11,7 +11,7 @@ model GuildConfig {
   guildId                         String                @unique @db.VarChar(32)
   ticketCategoryId                String?               @db.VarChar(32)
   enabled                         Boolean               @default(true)
-  maxLearnedItems                 Int                   @default(20)
+  maxLearnedItems                 Int                   @default(50)
   escalationCategoryId            String?               @db.VarChar(32)
   escalationNotificationChannelId String?               @db.VarChar(32)
   maxAdminRoutes                  Int                   @default(10)
