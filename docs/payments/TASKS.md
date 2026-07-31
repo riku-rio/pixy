@@ -11,41 +11,41 @@
 
 ### Data model
 
-- [ ] Add `GuildBilling` to `prisma/schema.prisma`.
-- [ ] Add unique `guildId` billing ownership without a cascade relation to `GuildConfig`.
-- [ ] Add nullable Trial start/end timestamps.
-- [ ] Add nullable Pro start/end timestamps.
-- [ ] Add Partner active state and start timestamp.
-- [ ] Add created/updated timestamps.
-- [ ] Add indexes required for active Partner listing and expiration queries.
-- [ ] Add `BillingEvent` audit model.
-- [ ] Add billing event action, actor, duration, prior expiry, next expiry, metadata, and timestamp fields.
-- [ ] Add indexes for guild history, actor history, action type, and chronological lookup.
-- [ ] Create the Prisma migration.
-- [ ] Regenerate Prisma Client.
-- [ ] Update database-clear tooling so full development database resets still include the new tables.
+- [x] Add `GuildBilling` to `prisma/schema.prisma`.
+- [x] Add unique `guildId` billing ownership without a cascade relation to `GuildConfig`.
+- [x] Add nullable Trial start/end timestamps.
+- [x] Add nullable Pro start/end timestamps.
+- [x] Add Partner active state and start timestamp.
+- [x] Add created/updated timestamps.
+- [x] Add indexes required for active Partner listing and expiration queries.
+- [x] Add `BillingEvent` audit model.
+- [x] Add billing event action, actor, duration, prior expiry, next expiry, metadata, and timestamp fields.
+- [x] Add indexes for guild history, actor history, action type, and chronological lookup.
+- [x] Create the Prisma migration.
+- [x] Regenerate Prisma Client.
+- [x] Update database-clear tooling so full development database resets still include the new tables.
 
 ### Constants and types
 
-- [ ] Add canonical plan constants: `trial`, `expired`, `pro`, and `partner`.
-- [ ] Add canonical billing event action constants.
-- [ ] Add premium entitlement constants or a capability map.
-- [ ] Define the standard Trial duration as seven days.
-- [ ] Define the standard Pro duration as 30 days.
-- [ ] Define custom duration units and a safe maximum.
+- [x] Add canonical plan constants: `trial`, `expired`, `pro`, and `partner`.
+- [x] Add canonical billing event action constants.
+- [x] Add premium entitlement constants or a capability map.
+- [x] Define the standard Trial duration as seven days.
+- [x] Define the standard Pro duration as 30 days.
+- [x] Define custom duration units and a safe maximum.
 
 ### Central billing service
 
-- [ ] Create a centralized billing service/module.
-- [ ] Implement billing-state loading by guild ID.
-- [ ] Implement effective-plan resolution with priority `Partner > Pro > Trial > Expired`.
-- [ ] Implement exact expiration boundary rules.
-- [ ] Implement remaining-time calculation.
-- [ ] Implement premium-entitlement calculation.
-- [ ] Implement fallback-plan calculation beneath Partner.
-- [ ] Implement display-ready billing summary data.
-- [ ] Ensure read methods do not silently grant a Trial.
-- [ ] Add unit tests for plan resolution and time boundaries.
+- [x] Create a centralized billing service/module.
+- [x] Implement billing-state loading by guild ID.
+- [x] Implement effective-plan resolution with priority `Partner > Pro > Trial > Expired`.
+- [x] Implement exact expiration boundary rules.
+- [x] Implement remaining-time calculation.
+- [x] Implement premium-entitlement calculation.
+- [x] Implement fallback-plan calculation beneath Partner.
+- [x] Implement display-ready billing summary data.
+- [x] Ensure read methods do not silently grant a Trial.
+- [x] Add unit tests for plan resolution and time boundaries.
 
 ## Phase 2 — Environment and owner authorization
 
