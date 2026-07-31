@@ -60,7 +60,7 @@ function categorySelectPayload(userId) {
 async function saveCategory(guildId, categoryId) {
   return prisma.guildConfig.upsert({
     where: { guildId },
-    create: { guildId, ticketCategoryId: categoryId, enabled: true, maxLearnedItems: 20 },
+    create: { guildId, ticketCategoryId: categoryId, enabled: true, maxLearnedItems: 50 },
     update: { ticketCategoryId: categoryId, enabled: true },
   });
 }
