@@ -27,6 +27,13 @@ function getDisabledMessage(command) {
   );
 }
 
+function isOwnerAuthorized(message, command) {
+  if (command?.ownerOnly !== true) return true;
+
+  const owners = message.client.appEnv?.owners;
+  return owners instanceof Set && owners.has(String(message.author.id));
+}
+
 function getPrefixData(message) {
   const prefix = message.client.appEnv?.prefix || "!";
   const botId = message.client.user?.id;
@@ -226,6 +233,7 @@ module.exports = {
       message.client.prefixCommands.get(message.client.aliases.get(commandName));
 
     if (!command) return;
+    if (!isOwnerAuthorized(message, command)) return;
 
     try {
       const allowed = await runChecks(message, command, args, prefixData.rawPrefix);
