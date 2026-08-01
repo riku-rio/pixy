@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { Collection } = require("discord.js");
+const { ChannelType, Collection } = require("discord.js");
 
 const {
   BILLING_PLANS,
@@ -12,6 +12,9 @@ const {
 const {
   refreshOpenTicketControlsForGuild,
 } = require("../src/billing/ticketControlRefresh");
+const {
+  trackTicketChannel,
+} = require("../src/events/tickets/channelCreate");
 
 const NOW = new Date("2026-08-01T12:00:00.000Z");
 
@@ -53,6 +56,55 @@ test("expired renders only AI On/Off without disabled premium choices or reset",
   assert.deepEqual(optionValues(offPayload), ["ai_on"]);
   assert.match(onPayload.content, /Pixy AI Control/);
   assert.doesNotMatch(onPayload.content, /Use the menu below if you want to escalate/);
+});
+
+test("new ticket tracking renders controls from the current effective plan", async () => {
+  let sentPayload = null;
+  let upserted = false;
+  const client = {
+    guildConfig: {
+      async findUnique() {
+        return {
+          enabled: true,
+          ticketCategoryId: "category-1",
+        };
+      },
+    },
+    guildIgnoredChannel: {
+      async findUnique() {
+        return null;
+      },
+    },
+    ticketChannel: {
+      async upsert() {
+        upserted = true;
+      },
+    },
+  };
+  const channel = {
+    id: "channel-1",
+    type: ChannelType.GuildText,
+    parentId: "category-1",
+    guild: { id: "guild-1" },
+    async send(payload) {
+      sentPayload = payload;
+    },
+  };
+
+  const result = await trackTicketChannel(channel, {
+    client,
+    async loadEntitlement() {
+      return {
+        plan: BILLING_PLANS.EXPIRED,
+        premiumEntitled: false,
+      };
+    },
+  });
+
+  assert.equal(result.tracked, true);
+  assert.equal(result.plan, BILLING_PLANS.EXPIRED);
+  assert.equal(upserted, true);
+  assert.deepEqual(optionValues(sentPayload), ["ai_off"]);
 });
 
 function createRefreshFixture({ editError = null } = {}) {
