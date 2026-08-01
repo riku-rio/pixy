@@ -2,7 +2,11 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  BILLING_CAPABILITIES,
+} = require("../src/billing/constants");
+const {
   LEARN_WRITE_BLOCKED_MESSAGE,
+  getLearnCommandAction,
   getLearnWriteAction,
   getLearnWriteAvailability,
   stopUnavailableLearnWrite,
@@ -50,17 +54,31 @@ function createModalInteraction(customId) {
   };
 }
 
+function createEntitlement(plan, writeAvailable) {
+  return {
+    guildId: "guild-1",
+    plan,
+    premiumEntitled: writeAvailable,
+    billing: plan === "expired"
+      ? {
+        guildId: "guild-1",
+        trialStartedAt: new Date("2026-07-01T00:00:00.000Z"),
+        trialEndsAt: new Date("2026-07-08T00:00:00.000Z"),
+      }
+      : { guildId: "guild-1" },
+    capabilities: {
+      [BILLING_CAPABILITIES.LEARNED_KNOWLEDGE_WRITE]: writeAvailable,
+    },
+  };
+}
+
 for (const plan of ["trial", "pro", "partner"]) {
   for (const action of ["add-qna", "add-freeform"]) {
     test(`${action} is allowed for ${plan}`, async () => {
       const interaction = createCommandInteraction(action);
       const stopped = await stopUnavailableLearnWrite(interaction, {
-        async getAvailability() {
-          return {
-            available: true,
-            plan,
-            premiumEntitled: true,
-          };
+        async loadEntitlement() {
+          return createEntitlement(plan, true);
         },
       });
 
@@ -71,6 +89,7 @@ for (const plan of ["trial", "pro", "partner"]) {
 }
 
 test("legacy add action is treated as the Q&A premium write path", () => {
+  assert.equal(getLearnCommandAction(createCommandInteraction("add")), "add");
   assert.equal(getLearnWriteAction(createCommandInteraction("add")), "add");
 });
 
@@ -78,13 +97,8 @@ test("expired add commands are blocked and direct administrators to billing", as
   for (const action of ["add-qna", "add-freeform"]) {
     const interaction = createCommandInteraction(action);
     const stopped = await stopUnavailableLearnWrite(interaction, {
-      async getAvailability() {
-        return {
-          available: false,
-          code: "subscription_trial_expired",
-          plan: "expired",
-          premiumEntitled: false,
-        };
+      async loadEntitlement() {
+        return createEntitlement("expired", false);
       },
     });
 
@@ -103,14 +117,9 @@ test("Q&A and free-form modals recheck entitlement after being opened", async ()
     const interaction = createModalInteraction(customId);
     let checks = 0;
     const stopped = await stopUnavailableLearnWrite(interaction, {
-      async getAvailability() {
+      async loadEntitlement() {
         checks += 1;
-        return {
-          available: false,
-          code: "subscription_trial_expired",
-          plan: "expired",
-          premiumEntitled: false,
-        };
+        return createEntitlement("expired", false);
       },
     });
 
@@ -120,25 +129,27 @@ test("Q&A and free-form modals recheck entitlement after being opened", async ()
   }
 });
 
-test("list, delete, and clear remain available without loading billing", async () => {
+test("list, delete, and clear resolve the effective plan but remain available when expired", async () => {
   for (const action of ["list", "delete", "clear"]) {
     const interaction = createCommandInteraction(action);
     let checks = 0;
     const availability = await getLearnWriteAvailability(interaction, {
-      async getAvailability() {
+      async loadEntitlement() {
         checks += 1;
-        throw new Error("read and delete actions must not check premium writes");
+        return createEntitlement("expired", false);
       },
     });
 
-    assert.equal(checks, 0);
+    assert.equal(checks, 1);
+    assert.equal(availability.planResolved, true);
+    assert.equal(availability.plan, "expired");
     assert.equal(availability.available, true);
     assert.equal(availability.gated, false);
-    assert.equal(availability.action, null);
+    assert.equal(availability.action, action);
   }
 });
 
-test("delete and clear component flows are not classified as premium writes", () => {
+test("delete and clear component flows remain outside the premium write gate", async () => {
   for (const customId of [
     "learn_delete:admin-1",
     "learn_delete_select:admin-1",
@@ -155,7 +166,17 @@ test("delete and clear component flows are not classified as premium writes", ()
         return customId.startsWith("learn_delete:");
       },
     };
+    let checks = 0;
+    const availability = await getLearnWriteAvailability(interaction, {
+      async loadEntitlement() {
+        checks += 1;
+        throw new Error("delete and clear components must not be gated");
+      },
+    });
 
     assert.equal(getLearnWriteAction(interaction), null);
+    assert.equal(availability.available, true);
+    assert.equal(availability.gated, false);
+    assert.equal(checks, 0);
   }
 });
