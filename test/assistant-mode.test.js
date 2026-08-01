@@ -13,6 +13,8 @@ const {
 const {
   SUBSCRIPTION_BLOCKED_AGENT_OUTPUT_STATUS,
   buildPromptForEntitlement,
+  channelControlPlans,
+  refreshControlsForPlanChange,
 } = require("../src/events/tickets/messageCreate");
 
 function promptText(messages) {
@@ -174,4 +176,42 @@ test("subscription-blocked agent output uses a stable AI usage status", () => {
     SUBSCRIPTION_BLOCKED_AGENT_OUTPUT_STATUS,
     "action_rejected:subscription_agent_output_blocked"
   );
+});
+
+test("the next ticket message refreshes controls only when the effective plan changes", async () => {
+  channelControlPlans.clear();
+  const refreshes = [];
+  const message = {
+    channelId: "channel-1",
+    channel: { id: "channel-1" },
+    guild: { id: "guild-1" },
+  };
+  const ticket = { aiEnabled: true };
+  const refreshControl = async (payload) => {
+    refreshes.push(payload);
+    return { ok: true };
+  };
+
+  await refreshControlsForPlanChange({
+    message,
+    ticket,
+    entitlement: { plan: "trial" },
+    refreshControl,
+  });
+  await refreshControlsForPlanChange({
+    message,
+    ticket,
+    entitlement: { plan: "trial" },
+    refreshControl,
+  });
+  await refreshControlsForPlanChange({
+    message,
+    ticket,
+    entitlement: { plan: "expired" },
+    refreshControl,
+  });
+
+  assert.equal(refreshes.length, 2);
+  assert.equal(refreshes[0].entitlement.plan, "trial");
+  assert.equal(refreshes[1].entitlement.plan, "expired");
 });
