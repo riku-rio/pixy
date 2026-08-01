@@ -93,32 +93,32 @@
 
 ### Shared capability helpers
 
-- [ ] Add a helper that reports whether a guild has premium entitlement.
-- [ ] Add a helper that reports whether a specific premium capability is available after combining billing entitlement and guild feature flags.
-- [ ] Keep billing state separate from stored feature flags.
-- [ ] Add stable rejection codes for subscription-locked actions.
-- [ ] Add user-facing messages for Trial expiration and Pro requirements.
+- [x] Add a helper that reports whether a guild has premium entitlement.
+- [x] Add a helper that reports whether a specific premium capability is available after combining billing entitlement and guild feature flags.
+- [x] Keep billing state separate from stored feature flags.
+- [x] Add stable rejection codes for subscription-locked actions.
+- [x] Add user-facing messages for Trial expiration and Pro requirements.
 
 ### Ticket action execution
 
-- [ ] Gate `close_ticket` at backend execution time.
-- [ ] Gate `rename_ticket` at backend execution time.
-- [ ] Gate `escalate_ticket` at backend execution time.
-- [ ] Gate the general AI agent-action capability.
-- [ ] Preserve existing safety validation and guild feature gates.
-- [ ] Log subscription rejection statuses in AI usage logs.
-- [ ] Add tests proving stale UI cannot bypass expiration.
+- [x] Gate `close_ticket` at backend execution time.
+- [x] Gate `rename_ticket` at backend execution time.
+- [x] Gate `escalate_ticket` at backend execution time.
+- [x] Gate the general AI agent-action capability.
+- [x] Preserve existing safety validation and guild feature gates.
+- [x] Log subscription rejection statuses in AI usage logs.
+- [x] Add tests proving stale UI cannot bypass expiration.
 
 ### Ticket interaction preflight
 
-- [ ] Extend ticket-action availability checks with billing entitlement.
-- [ ] Reject expired select-menu actions.
-- [ ] Reject expired confirmation buttons.
-- [ ] Reject expired escalation role choices.
-- [ ] Reject expired rename and escalation modal submissions.
-- [ ] Refresh the shared ticket control message after a stale premium interaction when possible.
-- [ ] Add subscription-specific disabled messages.
-- [ ] Add tests for every component path.
+- [x] Extend ticket-action availability checks with billing entitlement.
+- [x] Reject expired select-menu actions.
+- [x] Reject expired confirmation buttons.
+- [x] Reject expired escalation role choices.
+- [x] Reject expired rename and escalation modal submissions.
+- [x] Refresh the shared ticket control message after a stale premium interaction when possible.
+- [x] Add subscription-specific disabled messages.
+- [x] Add tests for every component path.
 
 ## Phase 5 — AI assistant mode versus agent mode
 
