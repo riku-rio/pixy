@@ -12,6 +12,7 @@ const {
   getGuildPremiumCapabilityAvailability,
   getGuildTicketActionAvailability,
   getSubscriptionRejectionMessage,
+  getSubscriptionRejectionStatus,
   hasGuildPremiumEntitlement,
 } = require("../src/billing/entitlementService");
 const {
@@ -140,6 +141,10 @@ test("expired trials and uninitialized guilds use stable subscription rejection 
     SUBSCRIPTION_REJECTION_CODES.TRIAL_EXPIRED
   );
   assert.match(getSubscriptionRejectionMessage(expired.code), /Trial has ended/);
+  assert.equal(
+    getSubscriptionRejectionStatus(expired.code),
+    "action_rejected:subscription_trial_expired"
+  );
 
   assert.equal(missing.available, false);
   assert.equal(
@@ -147,6 +152,10 @@ test("expired trials and uninitialized guilds use stable subscription rejection 
     SUBSCRIPTION_REJECTION_CODES.PRO_REQUIRED
   );
   assert.match(getSubscriptionRejectionMessage(missing.code), /requires Pixy Pro/);
+  assert.equal(
+    getSubscriptionRejectionStatus(missing.code),
+    "action_rejected:subscription_pro_required"
+  );
 });
 
 test("active premium agent capability still respects the guild agent-action flag", async () => {
