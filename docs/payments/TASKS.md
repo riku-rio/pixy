@@ -232,81 +232,81 @@
 
 ### Shared command utilities
 
-- [ ] Add guild ID validation.
-- [ ] Add accessible-guild resolution through the Discord client.
-- [ ] Add owner-only response formatting.
-- [ ] Add duration parser for `d`, `w`, `m`, and `y`.
-- [ ] Treat months as 30 days.
-- [ ] Treat years as 365 days.
-- [ ] Reject malformed, zero, negative, decimal, and unsupported durations.
-- [ ] Enforce a safe maximum duration.
-- [ ] Add transactional billing mutation helpers.
-- [ ] Add best-effort ticket control refresh after mutations.
+- [x] Add guild ID validation.
+- [x] Add accessible-guild resolution through the Discord client.
+- [x] Add owner-only response formatting.
+- [x] Add duration parser for `d`, `w`, `m`, and `y`.
+- [x] Treat months as 30 days.
+- [x] Treat years as 365 days.
+- [x] Reject malformed, zero, negative, decimal, and unsupported durations.
+- [x] Enforce a safe maximum duration.
+- [x] Add transactional billing mutation helpers.
+- [x] Add best-effort ticket control refresh after mutations.
 
 ### `^help`
 
-- [ ] Add Owner-only `^help`.
-- [ ] Document every billing and Partner command.
-- [ ] Include duration units and examples.
-- [ ] Attempt DM delivery first.
-- [ ] Fall back to the invoking channel if DMs are unavailable.
-- [ ] Keep the command silent for non-owners.
+- [x] Add Owner-only `^help`.
+- [x] Document every billing and Partner command.
+- [x] Include duration units and examples.
+- [x] Attempt DM delivery first.
+- [x] Fall back to the invoking channel if DMs are unavailable.
+- [x] Keep the command silent for non-owners.
 
 ### `^activate <guild-id>`
 
-- [ ] Add Owner-only `activate` command.
-- [ ] Require exactly one guild ID.
-- [ ] Require Pixy access to the guild.
-- [ ] Start 30 days from now.
-- [ ] Reject when active Pro already exists.
-- [ ] Recommend `^resub` in the active-Pro rejection.
-- [ ] Preserve Partner as the effective plan when applicable.
-- [ ] Create `pro_activated` audit event.
-- [ ] Show previous and new effective states.
+- [x] Add Owner-only `activate` command.
+- [x] Require exactly one guild ID.
+- [x] Require Pixy access to the guild.
+- [x] Start 30 days from now.
+- [x] Reject when active Pro already exists.
+- [x] Recommend `^resub` in the active-Pro rejection.
+- [x] Preserve Partner as the effective plan when applicable.
+- [x] Create `pro_activated` audit event.
+- [x] Show previous and new effective states.
 
 ### `^resub <guild-id>`
 
-- [ ] Add Owner-only `resub` command.
-- [ ] Require active Pro.
-- [ ] Add 30 days after current `proEndsAt`.
-- [ ] Reject expired or missing Pro and recommend `^activate`.
-- [ ] Preserve Partner as the effective plan when applicable.
-- [ ] Create `pro_renewed` audit event.
-- [ ] Show old and new expiry.
+- [x] Add Owner-only `resub` command.
+- [x] Require active Pro.
+- [x] Add 30 days after current `proEndsAt`.
+- [x] Reject expired or missing Pro and recommend `^activate`.
+- [x] Preserve Partner as the effective plan when applicable.
+- [x] Create `pro_renewed` audit event.
+- [x] Show old and new expiry.
 
 ### `^custom <guild-id> <duration>`
 
-- [ ] Add Owner-only `custom` command.
-- [ ] Parse and normalize duration.
-- [ ] Extend from current `proEndsAt` when active.
-- [ ] Start from now when no active Pro exists.
-- [ ] Preserve Partner as the effective plan when applicable.
-- [ ] Create `pro_customized` audit event.
-- [ ] Persist normalized duration metadata.
-- [ ] Show old and new expiry.
+- [x] Add Owner-only `custom` command.
+- [x] Parse and normalize duration.
+- [x] Extend from current `proEndsAt` when active.
+- [x] Start from now when no active Pro exists.
+- [x] Preserve Partner as the effective plan when applicable.
+- [x] Create `pro_customized` audit event.
+- [x] Persist normalized duration metadata.
+- [x] Show old and new expiry.
 
 ### `^deactivate <guild-id>`
 
-- [ ] Add Owner-only `deactivate` command.
-- [ ] End Pro immediately.
-- [ ] Preserve Trial dates.
-- [ ] Preserve Partner state.
-- [ ] Resolve and display fallback effective plan.
-- [ ] Create `pro_deactivated` audit event.
-- [ ] Handle already inactive Pro as a safe no-op or explicit error.
+- [x] Add Owner-only `deactivate` command.
+- [x] End Pro immediately.
+- [x] Preserve Trial dates.
+- [x] Preserve Partner state.
+- [x] Resolve and display fallback effective plan.
+- [x] Create `pro_deactivated` audit event.
+- [x] Handle already inactive Pro as a safe no-op or explicit error.
 
 ### `^status <guild-id>`
 
-- [ ] Add Owner-only `status` command.
-- [ ] Display guild name and ID.
-- [ ] Display effective plan.
-- [ ] Display Trial dates and active/expired state.
-- [ ] Display Pro dates and active/expired state.
-- [ ] Display Partner state and start date.
-- [ ] Display remaining duration.
-- [ ] Display fallback state beneath Partner.
-- [ ] Display latest billing event and actor.
-- [ ] Handle an uninitialized guild clearly.
+- [x] Add Owner-only `status` command.
+- [x] Display guild name and ID.
+- [x] Display effective plan.
+- [x] Display Trial dates and active/expired state.
+- [x] Display Pro dates and active/expired state.
+- [x] Display Partner state and start date.
+- [x] Display remaining duration.
+- [x] Display fallback state beneath Partner.
+- [x] Display latest billing event and actor.
+- [x] Handle an uninitialized guild clearly.
 
 ## Phase 10 — Partner management
 
