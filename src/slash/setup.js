@@ -75,6 +75,14 @@ async function saveCategoryAndStartTrial(guildId, categoryId, options = {}) {
   return config;
 }
 
+async function completeExistingCategorySetup(guildId, categoryId, options = {}) {
+  return saveCategoryAndStartTrial(guildId, categoryId, options);
+}
+
+async function completeAutomaticCategorySetup(guildId, categoryId, options = {}) {
+  return saveCategoryAndStartTrial(guildId, categoryId, options);
+}
+
 async function createOrFind(guild) {
   await guild.channels.fetch().catch(() => null);
   const existing = guild.channels.cache.find((channel) =>
@@ -119,7 +127,7 @@ const command = {
           await interaction.editReply({ content: "I need Manage Channels permission to create the ticket category automatically.", components: [] });
           return;
         }
-        await saveCategoryAndStartTrial(interaction.guild.id, category.id);
+        await completeAutomaticCategorySetup(interaction.guild.id, category.id);
         await interaction.editReply({ content: `Ticket category saved as **${category.name}**. Configure the Groq key and features with /pixy-settings.`, components: [] });
       },
     },
@@ -139,7 +147,7 @@ const command = {
           await interaction.editReply({ content: "Invalid category selected.", components: [] });
           return;
         }
-        await saveCategoryAndStartTrial(interaction.guild.id, category.id);
+        await completeExistingCategorySetup(interaction.guild.id, category.id);
         await interaction.editReply({ content: `Ticket category saved as **${category.name}**. Configure the Groq key and features with /pixy-settings.`, components: [] });
       },
     },
@@ -151,6 +159,8 @@ module.exports = Object.assign(command, {
   CATEGORY_SELECT,
   CREATE_AUTO,
   SELECT_EXISTING,
+  completeAutomaticCategorySetup,
+  completeExistingCategorySetup,
   createOrFind,
   saveCategory,
   saveCategoryAndStartTrial,
