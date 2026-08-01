@@ -21,6 +21,7 @@ const PAGES = Object.freeze({
   HOME: "home",
   QUICKSTART: "quickstart",
   GROQ: "groq",
+  BILLING: "billing",
   FEATURES: "features",
   COMMANDS: "commands",
   TROUBLESHOOTING: "troubleshooting",
@@ -40,6 +41,12 @@ const TOPICS = Object.freeze([
     emoji: "🔑",
   },
   {
+    label: "Plans & Billing",
+    description: "Understand Trial, Pro, Partner, and Expired mode",
+    value: PAGES.BILLING,
+    emoji: "💳",
+  },
+  {
     label: "Features",
     description: "Understand each Pixy feature toggle",
     value: PAGES.FEATURES,
@@ -53,7 +60,7 @@ const TOPICS = Object.freeze([
   },
   {
     label: "Troubleshooting",
-    description: "Fix common setup, key, model, and permission issues",
+    description: "Fix setup, subscription, key, model, and permission issues",
     value: PAGES.TROUBLESHOOTING,
     emoji: "🛠️",
   },
@@ -102,6 +109,15 @@ function navigation(userId) {
   );
 }
 
+function panel(embed, userId, extraRows = []) {
+  return {
+    content: null,
+    embeds: [embed],
+    components: [...topicMenu(userId), ...extraRows, navigation(userId)],
+    allowedMentions: { parse: [] },
+  };
+}
+
 function home(userId) {
   const embed = new EmbedBuilder()
     .setTitle("🤖 Pixy Help")
@@ -109,18 +125,13 @@ function home(userId) {
     .setDescription([
       "Choose a topic below to learn how to set up and use Pixy.",
       "",
-      "For a new server, start with **Quick Start**, then connect a Groq API key.",
+      "For a new server, start with **Quick Start**, connect a guild-owned Groq API key, and review **Plans & Billing**.",
     ].join("\n"))
     .addFields({
       name: "Recommended setup order",
-      value: "`/pixy-setup` → `/pixy-settings` → **AI API** → **Features**",
+      value: "`/pixy-setup` → `/pixy-settings` → **AI API** → `/pixy-billing` → **Features**",
     });
-
-  return {
-    content: null,
-    embeds: [embed],
-    components: [...topicMenu(userId), navigation(userId)],
-  };
+  return panel(embed, userId);
 }
 
 function quickStart(userId) {
@@ -131,15 +142,15 @@ function quickStart(userId) {
     .addFields(
       {
         name: "1. Choose the ticket category",
-        value: "Run `/pixy-setup` as a server administrator and select the category that contains your ticket channels.",
+        value: "Run `/pixy-setup` as a server administrator and select the category that contains your ticket channels. The first successful setup starts the one-time seven-day Trial.",
       },
       {
         name: "2. Connect Groq",
-        value: "Open `/pixy-settings` → **AI API** → **Set API Key**, then paste your server's Groq API key.",
+        value: "Open `/pixy-settings` → **AI API** → **Set API Key**, then paste your server's Groq API key. Groq usage and limits belong to the guild.",
       },
       {
-        name: "3. Check the model",
-        value: "Keep the default model or choose another supported Groq chat model from the **AI API** page.",
+        name: "3. Review billing",
+        value: "Run `/pixy-billing` to see the effective plan, remaining time, feature availability, and manual activation options.",
       },
       {
         name: "4. Review features",
@@ -150,19 +161,14 @@ function quickStart(userId) {
         value: "Send a normal support question inside a channel under the configured ticket category.",
       }
     );
-
-  return {
-    content: null,
-    embeds: [embed],
-    components: [...topicMenu(userId), navigation(userId)],
-  };
+  return panel(embed, userId);
 }
 
 function groq(userId) {
   const embed = new EmbedBuilder()
     .setTitle("🔑 Groq API Key")
     .setColor(0xfee75c)
-    .setDescription("Each server connects its own Groq API key. Pixy does not provide or share a global key.")
+    .setDescription("Each server connects and pays for its own Groq API usage. Pixy does not provide a shared key or quota.")
     .addFields(
       {
         name: "Create a key",
@@ -178,12 +184,8 @@ function groq(userId) {
         value: "Run `/pixy-settings` → **AI API** → **Set API Key**, then paste the key into the private modal.",
       },
       {
-        name: "How Pixy stores it",
-        value: "Pixy validates the key, encrypts it before database storage, and never displays the saved secret again.",
-      },
-      {
-        name: "Important",
-        value: "Never post the key in a channel, screenshot, source file, or support message. Revoke and replace it immediately if it is exposed.",
+        name: "Storage and safety",
+        value: "Pixy validates and encrypts the key before storage and never displays the saved secret again. Never send it to a payment owner or support contact.",
       }
     );
 
@@ -199,56 +201,70 @@ function groq(userId) {
       .setStyle(ButtonStyle.Link)
       .setURL(GROQ_QUICKSTART_URL)
   );
+  return panel(embed, userId, [links]);
+}
 
-  return {
-    content: null,
-    embeds: [embed],
-    components: [...topicMenu(userId), links, navigation(userId)],
-  };
+function billing(userId) {
+  const embed = new EmbedBuilder()
+    .setTitle("💳 Plans & Billing")
+    .setColor(0x5865f2)
+    .setDescription("Billing is manual. Pixy never collects payment credentials or activates a server automatically.")
+    .addFields(
+      {
+        name: "Trial",
+        value: "The first successful `/pixy-setup` starts one seven-day Pro Trial. Clearing configuration or reinviting Pixy does not restart it.",
+      },
+      {
+        name: "Pro",
+        value: "Provides learned AI context, learned-knowledge additions, and validated ticket agent actions for the active period.",
+      },
+      {
+        name: "Partner",
+        value: "Provides premium entitlement without an expiry. Any Trial or Pro dates remain stored underneath as the fallback state.",
+      },
+      {
+        name: "Expired",
+        value: "Generic ticket AI replies and AI On/Off remain available. Learned AI context, new learned entries, and agent ticket actions are locked.",
+      },
+      {
+        name: "View or activate",
+        value: "Run `/pixy-billing`. PayPal and Vodafone Cash choices show a configured owner mention and manual DM instructions; do not send passwords, tokens, or API keys.",
+      }
+    );
+  return panel(embed, userId);
 }
 
 function features(userId) {
   const embed = new EmbedBuilder()
     .setTitle("🧩 Pixy Features")
     .setColor(0x5865f2)
-    .setDescription("Server administrators can enable or disable these from `/pixy-settings` → **Features**.")
+    .setDescription("Server administrators can change stored preferences from `/pixy-settings`. Subscription gates are enforced separately at execution time.")
     .addFields(
       {
-        name: "🤖 AI Reply",
-        value: "Allows Pixy to answer messages inside configured ticket channels.",
+        name: "🤖 Generic AI Reply",
+        value: "Available in every plan, including Expired, when the guild has configured its Groq key and enabled AI replies.",
         inline: true,
       },
       {
-        name: "🔒 Close Ticket",
-        value: "Allows validated ticket actions to close or delete a ticket channel.",
+        name: "🧠 Learned context",
+        value: "Trial, Pro, and Partner can use learned Q&A/free-form entries in AI context and add new entries.",
         inline: true,
       },
       {
-        name: "✏️ Rename Review",
-        value: "Allows Pixy to review and apply ticket rename actions.",
+        name: "🛠️ Agent actions",
+        value: "Trial, Pro, and Partner can use validated close, rename, and escalation actions when their feature toggles permit them.",
         inline: true,
       },
       {
-        name: "🚨 Escalation",
-        value: "Allows Pixy to route a ticket to the configured human support team.",
-        inline: true,
-      },
-      {
-        name: "🛠️ Agent Actions",
-        value: "Master switch for validated AI-requested ticket actions.",
-        inline: true,
+        name: "Expired controls",
+        value: "Expired ticket controls show only AI On/Off. Existing learned entries can still be listed, deleted, or cleared.",
       },
       {
         name: "Execution safety",
-        value: "A disabled action is rejected before Pixy changes the channel or ticket state; the toggle is not UI-only.",
+        value: "Plan and feature availability are rechecked at execution time, so stale menus or modals cannot bypass expiration.",
       }
     );
-
-  return {
-    content: null,
-    embeds: [embed],
-    components: [...topicMenu(userId), navigation(userId)],
-  };
+  return panel(embed, userId);
 }
 
 function commands(userId) {
@@ -257,43 +273,15 @@ function commands(userId) {
     .setColor(0x5865f2)
     .setDescription("The main commands used to configure and manage Pixy.")
     .addFields(
-      {
-        name: "/pixy-help",
-        value: "Open this help center.",
-        inline: true,
-      },
-      {
-        name: "/pixy-setup",
-        value: "Choose the Discord category containing ticket channels.",
-        inline: true,
-      },
-      {
-        name: "/pixy-settings",
-        value: "Manage the Groq key, model, features, escalation status, and custom blocked words.",
-        inline: true,
-      },
-      {
-        name: "/pixy-learn",
-        value: "Add, list, delete, or clear server-specific knowledge used by Pixy.",
-        inline: true,
-      },
-      {
-        name: "/pixy-admins",
-        value: "Configure escalation roles, routing descriptions, categories, and notifications.",
-        inline: true,
-      },
-      {
-        name: "/pixy-clear",
-        value: "Delete this server's saved Pixy data. It does not delete Discord channels or roles.",
-        inline: true,
-      }
+      { name: "/pixy-help", value: "Open this help center.", inline: true },
+      { name: "/pixy-setup", value: "Choose the ticket category and initialize the one-time Trial when no billing record exists.", inline: true },
+      { name: "/pixy-billing", value: "View plan status, dates, availability, and manual payment-owner instructions.", inline: true },
+      { name: "/pixy-settings", value: "Manage the Groq key, model, feature preferences, escalation status, and custom blocked words.", inline: true },
+      { name: "/pixy-learn", value: "Manage server-specific knowledge; additions require Trial, Pro, or Partner.", inline: true },
+      { name: "/pixy-admins", value: "Configure escalation roles, routing descriptions, categories, and notifications.", inline: true },
+      { name: "/pixy-clear", value: "Delete operational server data while retaining minimal billing continuity and audit records.", inline: true }
     );
-
-  return {
-    content: null,
-    embeds: [embed],
-    components: [...topicMenu(userId), navigation(userId)],
-  };
+  return panel(embed, userId);
 }
 
 function troubleshooting(userId) {
@@ -307,38 +295,34 @@ function troubleshooting(userId) {
         value: [
           "• Confirm `/pixy-setup` points to the correct ticket category.",
           "• Confirm **AI Reply** is enabled in `/pixy-settings`.",
-          "• Confirm a valid Groq API key is configured.",
+          "• Confirm a valid guild-owned Groq API key is configured.",
           "• Confirm the bot can view the channel, send messages, and read message history.",
         ].join("\n"),
       },
       {
-        name: "A ticket action was rejected",
-        value: "Check **Agent Actions** and the action-specific toggle such as **Close Ticket**, **Rename Review**, or **Escalation**.",
+        name: "A learned addition or ticket action is locked",
+        value: "Run `/pixy-billing`. Expired mode intentionally blocks learned additions/context and agent actions while keeping generic AI replies available.",
       },
       {
-        name: "Groq rejected the key",
-        value: "Create a new key from the official Groq console, make sure it was copied completely, then replace it from the **AI API** settings page.",
+        name: "A premium action was rejected despite a visible old menu",
+        value: "Pixy rechecks entitlement at execution time. Refresh the panel or ticket controls after activation; stale components cannot bypass expiration.",
       },
       {
-        name: "The model is unavailable",
-        value: "Reset to Pixy's default model or enter another chat model available to that Groq account.",
+        name: "Groq rejected the key or model",
+        value: "Create a new key from the official Groq console or reset to a model available to that guild's Groq account.",
       },
       {
         name: "Rename, close, or escalation still fails",
-        value: "Confirm Pixy has the Discord permissions needed to manage the ticket channel and access the configured escalation destination.",
+        value: "Confirm the guild has Trial, Pro, or Partner, the corresponding feature toggle is enabled, and Pixy has the Discord permissions required for the action.",
       }
     );
-
-  return {
-    content: null,
-    embeds: [embed],
-    components: [...topicMenu(userId), navigation(userId)],
-  };
+  return panel(embed, userId);
 }
 
 function render(page, userId) {
   if (page === PAGES.QUICKSTART) return quickStart(userId);
   if (page === PAGES.GROQ) return groq(userId);
+  if (page === PAGES.BILLING) return billing(userId);
   if (page === PAGES.FEATURES) return features(userId);
   if (page === PAGES.COMMANDS) return commands(userId);
   if (page === PAGES.TROUBLESHOOTING) return troubleshooting(userId);
@@ -366,9 +350,7 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.NAV.length).split(":")[0];
         if (!(await assertOwner(interaction, userId))) return;
-
         await interaction.deferUpdate();
-
         const selected = interaction.values[0];
         const page = selected === "reset" ? PAGES.HOME : selected;
         await interaction.editReply(render(page, userId));
@@ -382,7 +364,6 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.HOME.length);
         if (!(await assertOwner(interaction, userId))) return;
-
         await interaction.deferUpdate();
         await interaction.editReply(render(PAGES.HOME, userId));
       },
@@ -392,12 +373,12 @@ module.exports = {
       async execute(interaction) {
         const userId = interaction.customId.slice(PREFIX.CLOSE.length);
         if (!(await assertOwner(interaction, userId))) return;
-
         await interaction.deferUpdate();
         await interaction.editReply({
           content: "Help panel closed.",
           embeds: [],
           components: [],
+          allowedMentions: { parse: [] },
         });
       },
     },
