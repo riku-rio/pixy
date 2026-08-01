@@ -2,34 +2,44 @@ const { BILLING_PLANS } = require("./constants");
 const {
   OwnerBillingMutationError,
   activatePro,
+  addPartner,
   customizePro,
   deactivatePro,
+  listActivePartners,
   loadOwnerBillingStatus,
+  removePartner,
   renewPro,
 } = require("./ownerBillingService");
 const {
   OwnerCommandInputError,
   buildOwnerError,
   buildOwnerInfo,
+  buildOwnerResponsePages,
   buildOwnerSuccess,
   cleanOwnerText,
   formatOwnerDate,
   getOwnerCommandPrefix,
   parseDuration,
   replyOwner,
+  replyOwnerPages,
   resolveAccessibleGuild,
+  resolveGuildName,
 } = require("./ownerCommandUtils");
 
 function getDependencies(options = {}) {
   return {
     activatePro: options.activatePro || activatePro,
+    addPartner: options.addPartner || addPartner,
     customizePro: options.customizePro || customizePro,
     deactivatePro: options.deactivatePro || deactivatePro,
+    listActivePartners: options.listActivePartners || listActivePartners,
     loadOwnerBillingStatus:
       options.loadOwnerBillingStatus || loadOwnerBillingStatus,
+    removePartner: options.removePartner || removePartner,
     renewPro: options.renewPro || renewPro,
     resolveAccessibleGuild:
       options.resolveAccessibleGuild || resolveAccessibleGuild,
+    resolveGuildName: options.resolveGuildName || resolveGuildName,
   };
 }
 
@@ -40,6 +50,8 @@ function getMutationOptions(message, options = {}) {
     logger: options.logger || console,
     now: options.now,
     refreshControls: options.refreshControls,
+    transactionOptions: options.transactionOptions,
+    maxTransactionRetries: options.maxTransactionRetries,
   };
 }
 
@@ -244,6 +256,111 @@ async function executeStatus(message, args, options = {}) {
   });
 }
 
+function requirePartnerArgs(args) {
+  const action = String(args[0] || "").toLowerCase();
+  if (action === "list") {
+    if (args.length !== 1) {
+      throw new OwnerCommandInputError(
+        "invalid_partner_usage",
+        "Usage: ^partner list"
+      );
+    }
+    return { action };
+  }
+
+  if (action === "add" || action === "remove") {
+    if (args.length !== 2) {
+      throw new OwnerCommandInputError(
+        "invalid_partner_usage",
+        `Usage: ^partner ${action} <guild-id>`
+      );
+    }
+    return { action, guildId: args[1] };
+  }
+
+  throw new OwnerCommandInputError(
+    "invalid_partner_action",
+    "Partner action must be add, remove, or list."
+  );
+}
+
+async function executePartnerList(message, dependencies, options = {}) {
+  const rows = await dependencies.listActivePartners({ client: options.client });
+  if (!rows.length) {
+    return replyOwner(
+      message,
+      buildOwnerInfo("Active Pixy Partners", ["No active Partner guilds were found."])
+    );
+  }
+
+  const lines = [];
+  for (const row of rows) {
+    const guildId = cleanOwnerText(row.guildId, 32);
+    const guildName = await dependencies.resolveGuildName(message.client, guildId);
+    lines.push(
+      `• **${guildName || "Unavailable guild"}** — \`${guildId}\` — since ${formatOwnerDate(row.partnerSince)}`
+    );
+  }
+
+  return replyOwnerPages(
+    message,
+    buildOwnerResponsePages({
+      title: `Active Pixy Partners (${rows.length})`,
+      tone: "info",
+      lines,
+    })
+  );
+}
+
+async function executePartner(message, args, options = {}) {
+  const dependencies = getDependencies(options);
+  return runOwnerHandler(message, async () => {
+    const parsed = requirePartnerArgs(args);
+    if (parsed.action === "list") {
+      return executePartnerList(message, dependencies, options);
+    }
+
+    const guild = await dependencies.resolveAccessibleGuild(
+      message.client,
+      parsed.guildId
+    );
+    const mutationOptions = getMutationOptions(message, options);
+
+    if (parsed.action === "add") {
+      const result = await dependencies.addPartner(
+        guild.id,
+        message.author.id,
+        mutationOptions
+      );
+      return replyOwner(
+        message,
+        buildOwnerSuccess("Partner entitlement enabled", [
+          formatGuild(guild),
+          `**Partner since:** ${formatOwnerDate(result.after.partnerSince)}`,
+          `**Previous effective plan:** ${formatPlan(result.beforeSummary)}`,
+          `**New effective plan:** ${formatPlan(result.afterSummary)}`,
+          "Trial and Pro dates were preserved underneath Partner.",
+        ])
+      );
+    }
+
+    const result = await dependencies.removePartner(
+      guild.id,
+      message.author.id,
+      mutationOptions
+    );
+    return replyOwner(
+      message,
+      buildOwnerSuccess("Partner entitlement removed", [
+        formatGuild(guild),
+        `**Effective plan now:** ${formatPlan(result.afterSummary)}`,
+        `**Fallback plan:** ${result.afterSummary.planLabel}`,
+        "Trial and Pro dates were preserved.",
+      ])
+    );
+  });
+}
+
 function buildOwnerHelpPayload(message) {
   const prefix = getOwnerCommandPrefix(message);
   return buildOwnerInfo("Pixy owner billing commands", [
@@ -253,13 +370,12 @@ function buildOwnerHelpPayload(message) {
     `\`${prefix}custom <guild-id> <duration>\` — Add a custom Pro duration from the active expiry, or from now when Pro is inactive.`,
     `\`${prefix}deactivate <guild-id>\` — End active Pro immediately while preserving Trial and Partner state.`,
     `\`${prefix}status <guild-id>\` — Show the complete billing state and latest audit event.`,
-    "**Partner commands (Phase 10 operator syntax)**",
     `\`${prefix}partner add <guild-id>\` — Enable Partner while preserving Trial and Pro dates.`,
     `\`${prefix}partner remove <guild-id>\` — Disable Partner and reveal the fallback plan.`,
     `\`${prefix}partner list\` — List active Partner guilds.`,
     "**Duration units**",
     "`d` = days, `w` = 7-day weeks, `m` = 30-day months, `y` = 365-day years.",
-    "Examples: `14d`, `8w`, `6m`, `1y`. Maximum: 3,650 days (10 years).",
+    "Examples: `14d`, `8w`, `6m`, `1y`. Maximum resulting Pro expiry: 10 years from now.",
   ]);
 }
 
@@ -282,11 +398,14 @@ module.exports = {
   executeCustom,
   executeDeactivate,
   executeHelp,
+  executePartner,
+  executePartnerList,
   executeResub,
   executeStatus,
   formatGuild,
   formatPlan,
   getDependencies,
   getMutationOptions,
+  requirePartnerArgs,
   runOwnerHandler,
 };
