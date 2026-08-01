@@ -51,24 +51,24 @@
 
 ### Environment parsing
 
-- [ ] Add `OWNERS` to `.env.example`.
-- [ ] Add `PAYPAL_OWNER_ID` to `.env.example`.
-- [ ] Add `VODAFONE_OWNER_ID` to `.env.example`.
-- [ ] Parse `OWNERS` into a trimmed and deduplicated `Set`.
-- [ ] Validate Discord snowflake formatting.
-- [ ] Validate both payment-owner IDs.
-- [ ] Fail production startup when required owner configuration is invalid.
-- [ ] Expose parsed owner configuration through `client.appEnv`.
-- [ ] Add environment parsing tests.
+- [x] Add `OWNERS` to `.env.example`.
+- [x] Add `PAYPAL_OWNER_ID` to `.env.example`.
+- [x] Add `VODAFONE_OWNER_ID` to `.env.example`.
+- [x] Parse `OWNERS` into a trimmed and deduplicated `Set`.
+- [x] Validate Discord snowflake formatting.
+- [x] Validate both payment-owner IDs.
+- [x] Fail production startup when required owner configuration is invalid.
+- [x] Expose parsed owner configuration through `client.appEnv`.
+- [x] Add environment parsing tests.
 
 ### Prefix command pipeline
 
-- [ ] Add a reusable `ownerOnly: true` prefix command property.
-- [ ] Check owner authorization immediately after command lookup.
-- [ ] Run owner authorization before argument, usage, permission, cooldown, or disabled checks.
-- [ ] Return silently for every unauthorized owner-only command attempt.
-- [ ] Add tests proving no reply, usage hint, or error is emitted to unauthorized users.
-- [ ] Ensure ordinary non-owner prefix commands retain their existing behavior.
+- [x] Add a reusable `ownerOnly: true` prefix command property.
+- [x] Check owner authorization immediately after command lookup.
+- [x] Run owner authorization before argument, usage, permission, cooldown, or disabled checks.
+- [x] Return silently for every unauthorized owner-only command attempt.
+- [x] Add tests proving no reply, usage hint, or error is emitted to unauthorized users.
+- [x] Ensure ordinary non-owner prefix commands retain their existing behavior.
 
 ## Phase 3 — One-time Trial lifecycle
 
