@@ -3,6 +3,9 @@ const {
   DISABLED_MESSAGES,
   getTicketActionAvailability,
 } = require("../features/ticketActionAvailability");
+const {
+  stopUnavailableLearnWrite,
+} = require("../features/learnSubscription");
 
 const DEFAULT_ERROR_MESSAGE = "An error occurred while executing this interaction.";
 
@@ -52,14 +55,14 @@ async function refreshExpiredTicketControls(interaction, aiEnabled) {
   if (!interaction.channel) return { ok: false, code: "missing_channel" };
 
   const {
-    refreshTicketControlMessage,
-  } = require("../components/ticketAiControls");
+    refreshOpenTicketControlForChannel,
+  } = require("../billing/ticketControlRefresh");
 
-  return refreshTicketControlMessage(
-    interaction.channel,
+  return refreshOpenTicketControlForChannel({
+    guildId: interaction.guild?.id,
+    channel: interaction.channel,
     aiEnabled,
-    { premiumEntitled: false }
-  );
+  });
 }
 
 async function stopUnavailableTicketAction(interaction, options = {}) {
@@ -94,6 +97,25 @@ async function stopUnavailableTicketAction(interaction, options = {}) {
   } catch (error) {
     console.error("Ticket action availability preflight failed:", error);
     return false;
+  }
+}
+
+async function stopUnavailableLearnInteraction(interaction, options = {}) {
+  try {
+    const stopLearnWrite =
+      options.stopLearnWrite || stopUnavailableLearnWrite;
+
+    return await stopLearnWrite(interaction, {
+      ...options,
+      reply: safeReply,
+    });
+  } catch (error) {
+    console.error("Learn subscription preflight failed:", error);
+    await safeReply(
+      interaction,
+      "I could not verify the server's subscription right now. Please try again."
+    );
+    return true;
   }
 }
 
@@ -282,6 +304,7 @@ const interactionCreateEvent = {
     if (interaction.isAutocomplete()) return handleAutocomplete(interaction);
 
     if (interaction.isChatInputCommand()) {
+      if (await stopUnavailableLearnInteraction(interaction)) return;
       const command = interaction.client.commands.get(interaction.commandName);
       if (!command) return safeReply(interaction, "Unknown command.");
       await runInteraction(interaction, `Command ${interaction.commandName}`, command, () => command.execute(interaction));
@@ -303,6 +326,7 @@ const interactionCreateEvent = {
     }
 
     if (interaction.isModalSubmit()) {
+      if (await stopUnavailableLearnInteraction(interaction)) return;
       if (await stopUnavailableTicketAction(interaction)) return;
       const handler = findModalHandler(interaction);
       if (handler) await runInteraction(interaction, `Modal ${interaction.customId}`, handler, () => handler.execute(interaction));
@@ -314,5 +338,6 @@ module.exports = Object.assign(interactionCreateEvent, {
   getInteractionErrorMessage,
   refreshExpiredTicketControls,
   safeReply,
+  stopUnavailableLearnInteraction,
   stopUnavailableTicketAction,
 });
