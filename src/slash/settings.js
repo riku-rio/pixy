@@ -15,6 +15,8 @@ const { DEFAULT_GROQ_MODEL, validateGroqApiKey, validateGroqChatModel } = requir
 const { encryptCredential } = require("../security/credentialEncryption");
 const { getBlockedTermsStats, addGuildBlockedTerm, removeGuildBlockedTerm } = require("../utils/blockedTerms");
 const { createStringSelectMenus } = require("../utils/selectMenuHelper");
+const { BILLING_PLANS } = require("../billing/constants");
+const { loadBillingSummary } = require("../billing/billingService");
 
 const EPHEMERAL = 64;
 const PREFIX = Object.freeze({
@@ -58,25 +60,41 @@ function navigation(userId) {
   );
 }
 
+function getFeaturePlanDescription(summary) {
+  if (summary.plan !== BILLING_PLANS.EXPIRED) {
+    return `Effective plan: **${summary.planLabel}**. Disabled features are blocked at execution time, including actions requested by the AI.`;
+  }
+  return [
+    "Effective plan: **Expired**.",
+    "Generic AI replies and ticket AI On/Off remain available. Learned AI context, learned additions, and agent ticket actions stay subscription-locked even when their stored feature preferences are enabled.",
+    "Use `/pixy-billing` to view activation options.",
+  ].join("\n");
+}
+
 async function renderHome(guildId, userId) {
-  const setting = await getOrCreateGuildSetting(guildId);
+  const [setting, billing] = await Promise.all([
+    getOrCreateGuildSetting(guildId),
+    loadBillingSummary(guildId),
+  ]);
   const enabledCount = FEATURES.filter(({ field }) => setting[field]).length;
   const embed = new EmbedBuilder()
     .setTitle("🤖 Pixy Settings")
     .setColor(0x5865f2)
-    .setDescription("Select a category below to configure Pixy for this server.")
+    .setDescription("Select a category below to configure Pixy for this server. Subscription availability is enforced independently from stored feature preferences.")
     .addFields(
+      { name: "Plan", value: billing.planLabel, inline: true },
       { name: "Features", value: `${enabledCount}/${FEATURES.length} enabled`, inline: true },
       { name: "Groq API", value: setting.groqApiKeyEncrypted ? "Configured" : "Required", inline: true },
-      { name: "Model", value: `\`${setting.aiModel || DEFAULT_GROQ_MODEL}\``, inline: true }
+      { name: "Model", value: `\`${setting.aiModel || DEFAULT_GROQ_MODEL}\``, inline: true },
+      { name: "Billing", value: "Use `/pixy-billing` for dates, remaining time, and activation instructions.", inline: false }
     );
   const menus = createStringSelectMenus({
     customId: scoped(PREFIX.NAV, userId),
     placeholder: "Select a settings category...",
     options: [
-      { label: "Features", description: "Enable or disable Pixy's server features", value: PAGES.FEATURES, emoji: "📝" },
+      { label: "Features", description: "Enable or disable Pixy's server preferences", value: PAGES.FEATURES, emoji: "📝" },
       { label: "Escalation", description: "View escalation configuration", value: PAGES.ESCALATION, emoji: "🚨" },
-      { label: "AI API", description: "Manage the Groq API key and model", value: PAGES.AIAPI, emoji: "🔑" },
+      { label: "AI API", description: "Manage the guild-owned Groq key and model", value: PAGES.AIAPI, emoji: "🔑" },
       { label: "Bad Words", description: "Manage custom blocked terms", value: PAGES.BADWORDS, emoji: "🛡️" },
     ],
   });
@@ -84,10 +102,13 @@ async function renderHome(guildId, userId) {
 }
 
 async function renderFeatures(guildId, userId) {
-  const setting = await getOrCreateGuildSetting(guildId);
+  const [setting, billing] = await Promise.all([
+    getOrCreateGuildSetting(guildId),
+    loadBillingSummary(guildId),
+  ]);
   const menus = createStringSelectMenus({
     customId: scoped(PREFIX.TOGGLE, userId),
-    placeholder: "Select a feature to toggle...",
+    placeholder: "Select a feature preference to toggle...",
     options: FEATURES.map((feature) => ({
       label: `Toggle ${feature.label}`,
       description: feature.description,
@@ -99,27 +120,35 @@ async function renderFeatures(guildId, userId) {
     content: null,
     embeds: [new EmbedBuilder()
       .setTitle("📝 Feature Settings")
-      .setColor(0x5865f2)
-      .setDescription("Disabled features are blocked at execution time, including actions requested by the AI.")
-      .addFields(...FEATURES.map(({ field, label }) => ({ name: label, value: setting[field] ? "✅ Enabled" : "❌ Disabled", inline: true })))],
+      .setColor(billing.plan === BILLING_PLANS.EXPIRED ? 0xed4245 : 0x5865f2)
+      .setDescription(getFeaturePlanDescription(billing))
+      .addFields(...FEATURES.map(({ field, label }) => ({
+        name: label,
+        value: setting[field] ? "✅ Preference enabled" : "❌ Preference disabled",
+        inline: true,
+      })))],
     components: [...menus, navigation(userId)],
   };
 }
 
 async function renderEscalation(guildId, userId) {
-  const [config, setting, routeCount] = await Promise.all([
+  const [config, setting, routeCount, billing] = await Promise.all([
     prisma.guildConfig.findUnique({ where: { guildId } }),
     getOrCreateGuildSetting(guildId),
     prisma.adminRoute.count({ where: { guildId, enabled: true } }),
+    loadBillingSummary(guildId),
   ]);
   return {
     content: null,
     embeds: [new EmbedBuilder()
       .setTitle("🚨 Escalation Settings")
       .setColor(0xed4245)
-      .setDescription("Use /pixy-admins to configure routes and channels.")
+      .setDescription(billing.plan === BILLING_PLANS.EXPIRED
+        ? "Escalation configuration is preserved, but execution requires Trial, Pro, or Partner. Use `/pixy-billing`."
+        : "Use /pixy-admins to configure routes and channels.")
       .addFields(
-        { name: "Feature", value: setting.escalationEnabled ? "✅ Enabled" : "❌ Disabled", inline: true },
+        { name: "Plan", value: billing.planLabel, inline: true },
+        { name: "Feature preference", value: setting.escalationEnabled ? "✅ Enabled" : "❌ Disabled", inline: true },
         { name: "Category", value: config?.escalationCategoryId ? `<#${config.escalationCategoryId}>` : "Not configured", inline: true },
         { name: "Notifications", value: config?.escalationNotificationChannelId ? `<#${config.escalationNotificationChannelId}>` : "Not configured", inline: true },
         { name: "Routes", value: `${routeCount}/${config?.maxAdminRoutes || defaultAiConfig.maxAdminRoutesPerGuild}`, inline: true }
@@ -136,7 +165,7 @@ async function renderAiApi(guildId, userId) {
     embeds: [new EmbedBuilder()
       .setTitle("🔑 AI API Settings")
       .setColor(0xfee75c)
-      .setDescription("Every server supplies its own Groq API key. Existing keys are never displayed.")
+      .setDescription("Every server supplies its own Groq API key and is responsible for its own Groq usage and limits. Existing keys are never displayed.")
       .addFields(
         { name: "API Key", value: configured ? "✅ Configured" : config.credentialStatus === "invalid" ? "⚠️ Invalid" : "❌ Required", inline: true },
         { name: "Model", value: `\`${config.groq.model}\``, inline: true },
