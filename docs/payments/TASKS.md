@@ -188,45 +188,45 @@
 
 ### Command and permissions
 
-- [ ] Add `src/slash/billing.js` or equivalent.
-- [ ] Register the command as `/pixy-billing` through existing production naming behavior.
-- [ ] Require guild context.
-- [ ] Require Administrator permission.
-- [ ] Scope all controls to the administrator who opened the panel.
-- [ ] Use ephemeral responses.
+- [x] Add `src/slash/billing.js` or equivalent.
+- [x] Register the command as `/pixy-billing` through existing production naming behavior.
+- [x] Require guild context.
+- [x] Require Administrator permission.
+- [x] Scope all controls to the administrator who opened the panel.
+- [x] Use ephemeral responses.
 
 ### Status embed
 
-- [ ] Render Trial plan details.
-- [ ] Render Expired plan details.
-- [ ] Render Pro plan details.
-- [ ] Render Partner plan details.
-- [ ] Show remaining time.
-- [ ] Show relevant Trial and Pro dates.
-- [ ] Show Partner start date.
-- [ ] Show generic AI availability.
-- [ ] Show learned knowledge availability.
-- [ ] Show agent-action availability.
-- [ ] Explain that Groq usage belongs to the guild.
-- [ ] Add a prominent renewal warning at three days or fewer remaining.
-- [ ] Handle a missing/uninitialized billing record clearly.
+- [x] Render Trial plan details.
+- [x] Render Expired plan details.
+- [x] Render Pro plan details.
+- [x] Render Partner plan details.
+- [x] Show remaining time.
+- [x] Show relevant Trial and Pro dates.
+- [x] Show Partner start date.
+- [x] Show generic AI availability.
+- [x] Show learned knowledge availability.
+- [x] Show agent-action availability.
+- [x] Explain that Groq usage belongs to the guild.
+- [x] Add a prominent renewal warning at three days or fewer remaining.
+- [x] Handle a missing/uninitialized billing record clearly.
 
 ### Payment-method menu
 
-- [ ] Show PayPal for Trial, Expired, and Pro.
-- [ ] Show Vodafone Cash for Trial, Expired, and Pro.
-- [ ] Use Subscribe, Activate, or Renew wording based on state.
-- [ ] Hide the payment menu for Partner.
-- [ ] Map PayPal to `PAYPAL_OWNER_ID`.
-- [ ] Map Vodafone Cash to `VODAFONE_OWNER_ID`.
-- [ ] Return a clickable owner mention.
-- [ ] Tell the user to open the profile and send a DM.
-- [ ] Include guild name and guild ID in the instructions.
-- [ ] Ask the user to include the desired duration.
-- [ ] Warn against sending passwords, tokens, Groq keys, or secrets.
-- [ ] Do not send an owner DM automatically.
-- [ ] Do not activate or renew automatically.
-- [ ] Add tests for contact-owner routing and state-specific labels.
+- [x] Show PayPal for Trial, Expired, and Pro.
+- [x] Show Vodafone Cash for Trial, Expired, and Pro.
+- [x] Use Subscribe, Activate, or Renew wording based on state.
+- [x] Hide the payment menu for Partner.
+- [x] Map PayPal to `PAYPAL_OWNER_ID`.
+- [x] Map Vodafone Cash to `VODAFONE_OWNER_ID`.
+- [x] Return a clickable owner mention.
+- [x] Tell the user to open the profile and send a DM.
+- [x] Include guild name and guild ID in the instructions.
+- [x] Ask the user to include the desired duration.
+- [x] Warn against sending passwords, tokens, Groq keys, or secrets.
+- [x] Do not send an owner DM automatically.
+- [x] Do not activate or renew automatically.
+- [x] Add tests for contact-owner routing and state-specific labels.
 
 ## Phase 9 — Owner billing commands
 
