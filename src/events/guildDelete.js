@@ -1,26 +1,34 @@
 const { Events } = require("discord.js");
-const { prisma } = require("../config/prisma");
+const {
+  deleteGuildOperationalData,
+} = require("../data/guildOperationalCleanup");
 
-module.exports = {
+async function deleteRemovedGuildOperationalData(guild, options = {}) {
+  if (!guild?.id) return null;
+  const result = await deleteGuildOperationalData(guild.id, {
+    client: options.client,
+  });
+  return result;
+}
+
+const event = {
   name: Events.GuildDelete,
   async execute(guild) {
     if (!guild?.id) return;
-    const guildId = guild.id;
     try {
-      await prisma.$transaction([
-        prisma.aiUsageLog.deleteMany({ where: { guildId } }),
-        prisma.ticketChannel.deleteMany({ where: { guildId } }),
-        prisma.learnedAnswer.deleteMany({ where: { guildId } }),
-        prisma.adminRoute.deleteMany({ where: { guildId } }),
-        prisma.guildIgnoredChannel.deleteMany({ where: { guildId } }),
-        prisma.guildBlockedTerm.deleteMany({ where: { guildId } }),
-        prisma.guildAllowedTerm.deleteMany({ where: { guildId } }),
-        prisma.guildSetting.deleteMany({ where: { guildId } }),
-        prisma.guildConfig.deleteMany({ where: { guildId } }),
-      ]);
-      console.log(`Deleted stored Pixy data for removed guild ${guildId}.`);
+      const result = await deleteRemovedGuildOperationalData(guild);
+      console.log(
+        `Deleted ${result.totalDeleted} operational Pixy record(s) for removed guild ${guild.id}; billing continuity records were retained.`
+      );
     } catch (error) {
-      console.error(`Failed to delete stored data for removed guild ${guildId}:`, error);
+      console.error(
+        `Failed to delete operational data for removed guild ${guild.id}:`,
+        error
+      );
     }
   },
 };
+
+module.exports = Object.assign(event, {
+  deleteRemovedGuildOperationalData,
+});
