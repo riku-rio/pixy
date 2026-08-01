@@ -1,5 +1,7 @@
+const { BILLING_CAPABILITIES } = require("../billing/constants");
 const {
-  getGuildLearnedKnowledgeWriteAvailability,
+  getSubscriptionRejectionCode,
+  loadGuildEntitlementState,
 } = require("../billing/entitlementService");
 
 const LEARN_COMMAND_NAMES = new Set(["learn", "pixy-learn"]);
@@ -18,10 +20,18 @@ function isLearnCommand(interaction) {
   );
 }
 
+function getLearnCommandAction(interaction) {
+  if (!interaction?.isChatInputCommand?.() || !isLearnCommand(interaction)) {
+    return null;
+  }
+
+  return interaction.options?.getString?.("action", true) || null;
+}
+
 function getLearnWriteAction(interaction) {
-  if (interaction?.isChatInputCommand?.() && isLearnCommand(interaction)) {
-    const action = interaction.options?.getString?.("action", true);
-    return LEARN_ADD_ACTIONS.has(action) ? action : null;
+  const commandAction = getLearnCommandAction(interaction);
+  if (commandAction) {
+    return LEARN_ADD_ACTIONS.has(commandAction) ? commandAction : null;
   }
 
   if (!interaction?.isModalSubmit?.()) return null;
@@ -33,12 +43,16 @@ function getLearnWriteAction(interaction) {
 }
 
 async function getLearnWriteAvailability(interaction, options = {}) {
-  const action = getLearnWriteAction(interaction);
+  const commandAction = getLearnCommandAction(interaction);
+  const writeAction = getLearnWriteAction(interaction);
+  const action = commandAction || writeAction;
+
   if (!action) {
     return {
       available: true,
       action: null,
       gated: false,
+      planResolved: false,
     };
   }
 
@@ -46,22 +60,30 @@ async function getLearnWriteAvailability(interaction, options = {}) {
     return {
       available: false,
       action,
-      gated: true,
+      gated: Boolean(writeAction),
       code: "invalid_guild",
+      planResolved: false,
     };
   }
 
-  const getAvailability =
-    options.getAvailability || getGuildLearnedKnowledgeWriteAvailability;
-  const availability = await getAvailability(interaction.guild.id, {
+  const loadEntitlement =
+    options.loadEntitlement || loadGuildEntitlementState;
+  const entitlement = await loadEntitlement(interaction.guild.id, {
     client: options.client,
     now: options.now,
   });
+  const writeAvailable =
+    entitlement.capabilities?.[BILLING_CAPABILITIES.LEARNED_KNOWLEDGE_WRITE] === true;
 
   return {
-    ...availability,
+    ...entitlement,
+    available: !writeAction || writeAvailable,
     action,
-    gated: true,
+    gated: Boolean(writeAction),
+    code: writeAction && !writeAvailable
+      ? getSubscriptionRejectionCode(entitlement.billing, options.now)
+      : null,
+    planResolved: true,
   };
 }
 
@@ -92,6 +114,7 @@ module.exports = {
   LEARN_FREEFORM_MODAL_PREFIX,
   LEARN_QNA_MODAL_PREFIX,
   LEARN_WRITE_BLOCKED_MESSAGE,
+  getLearnCommandAction,
   getLearnWriteAction,
   getLearnWriteAvailability,
   isLearnCommand,
