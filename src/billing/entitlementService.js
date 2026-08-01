@@ -1,7 +1,4 @@
-const {
-  BILLING_CAPABILITIES,
-  BILLING_PLANS,
-} = require("./constants");
+const { BILLING_CAPABILITIES } = require("./constants");
 const {
   getPlanCapabilities,
   hasPremiumEntitlement,
@@ -51,6 +48,12 @@ function isSubscriptionRejectionCode(code) {
 
 function getSubscriptionRejectionMessage(code) {
   return SUBSCRIPTION_REJECTION_MESSAGES[code] || null;
+}
+
+function getSubscriptionRejectionStatus(code) {
+  return isSubscriptionRejectionCode(code)
+    ? `action_rejected:${code}`
+    : null;
 }
 
 async function loadGuildFeatureSettings(guildId, options = {}) {
@@ -193,6 +196,7 @@ module.exports = {
   getGuildTicketActionAvailability,
   getSubscriptionRejectionCode,
   getSubscriptionRejectionMessage,
+  getSubscriptionRejectionStatus,
   hasGuildPremiumEntitlement,
   isSubscriptionRejectionCode,
   loadGuildFeatureSettings,
