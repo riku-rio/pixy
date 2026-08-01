@@ -32,7 +32,7 @@ async function getRecentChannelMessages(channel, currentMessageId) {
   }
 }
 
-async function getLearnedKnowledge(guildId) {
+async function getLearnedKnowledge(guildId, options = {}) {
   if (!guildId) {
     return {
       learnedQna: [],
@@ -40,8 +40,10 @@ async function getLearnedKnowledge(guildId) {
     };
   }
 
+  const client = options.client || prisma;
+
   try {
-    const config = await prisma.guildConfig.findUnique({
+    const config = await client.guildConfig.findUnique({
       where: {
         guildId,
       },
@@ -52,7 +54,7 @@ async function getLearnedKnowledge(guildId) {
 
     const take = Math.max(1, Math.min(Number(config?.maxLearnedItems || 20), 100));
 
-    const items = await prisma.learnedAnswer.findMany({
+    const items = await client.learnedAnswer.findMany({
       where: {
         guildId,
       },
@@ -84,11 +86,13 @@ async function getLearnedKnowledge(guildId) {
   }
 }
 
-async function getAdminRoutes(guild) {
+async function getAdminRoutes(guild, options = {}) {
   if (!guild?.id) return [];
 
+  const client = options.client || prisma;
+
   try {
-    const config = await prisma.guildConfig.findUnique({
+    const config = await client.guildConfig.findUnique({
       where: {
         guildId: guild.id,
       },
@@ -102,7 +106,7 @@ async function getAdminRoutes(guild) {
       Math.min(Number(config?.maxAdminRoutes || aiConfig.maxAdminRoutesPerGuild || 10), 25)
     );
 
-    const routes = await prisma.adminRoute.findMany({
+    const routes = await client.adminRoute.findMany({
       where: {
         guildId: guild.id,
         enabled: true,
@@ -140,14 +144,21 @@ async function getAdminRoutes(guild) {
   }
 }
 
-async function buildTicketContext({ message }) {
-  const recentMessages = await getRecentChannelMessages(
-    message.channel,
-    message.id
-  );
-
-  const learnedKnowledge = await getLearnedKnowledge(message.guild?.id);
-  const adminRoutes = await getAdminRoutes(message.guild);
+async function buildTicketContext({
+  message,
+  includeLearnedKnowledge = true,
+  includeAdminRoutes = true,
+  client = prisma,
+}) {
+  const [recentMessages, learnedKnowledge, adminRoutes] = await Promise.all([
+    getRecentChannelMessages(message.channel, message.id),
+    includeLearnedKnowledge
+      ? getLearnedKnowledge(message.guild?.id, { client })
+      : Promise.resolve({ learnedQna: [], learnedFreeform: [] }),
+    includeAdminRoutes
+      ? getAdminRoutes(message.guild, { client })
+      : Promise.resolve([]),
+  ]);
 
   return {
     guildName: message.guild?.name || null,
@@ -161,4 +172,8 @@ async function buildTicketContext({ message }) {
 
 module.exports = {
   buildTicketContext,
+  cleanMessageContent,
+  getAdminRoutes,
+  getLearnedKnowledge,
+  getRecentChannelMessages,
 };
