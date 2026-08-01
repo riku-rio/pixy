@@ -184,3 +184,38 @@ model GuildAllowedTerm {
   @@unique([guildId, normalizedTerm])
   @@index([guildId])
 }
+
+model GuildBilling {
+  id             String   @id @default(cuid()) @db.VarChar(191)
+  guildId        String   @unique @db.VarChar(32)
+  trialStartedAt DateTime?
+  trialEndsAt    DateTime?
+  proStartedAt   DateTime?
+  proEndsAt      DateTime?
+  partnerActive  Boolean  @default(false)
+  partnerSince   DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([partnerActive, partnerSince])
+  @@index([trialEndsAt])
+  @@index([proEndsAt])
+}
+
+model BillingEvent {
+  id                String   @id @default(cuid()) @db.VarChar(191)
+  guildId           String   @db.VarChar(32)
+  actorUserId       String   @db.VarChar(32)
+  action            String   @db.VarChar(64)
+  durationValue     Int?
+  durationUnit      String?  @db.VarChar(16)
+  previousProEndsAt DateTime?
+  newProEndsAt      DateTime?
+  metadata          Json?
+  createdAt         DateTime @default(now())
+
+  @@index([guildId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+}

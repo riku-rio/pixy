@@ -3,6 +3,7 @@ require("dotenv").config({ quiet: true });
 const mariadb = require("mariadb");
 
 const CONFIRM_FLAG = "--confirm";
+const EXCLUDED_TABLES = new Set(["_prisma_migrations"]);
 
 function quoteIdentifier(value) {
   return `\`${String(value).replace(/`/g, "``")}\``;
@@ -30,17 +31,22 @@ function getConnectionOptions() {
   };
 }
 
+function selectApplicationTableNames(rows = []) {
+  return rows
+    .map((row) => row.tableName)
+    .filter((tableName) => tableName && !EXCLUDED_TABLES.has(tableName));
+}
+
 async function getApplicationTables(connection) {
   const rows = await connection.query(`
     SELECT TABLE_NAME AS tableName
     FROM information_schema.tables
     WHERE table_schema = DATABASE()
       AND TABLE_TYPE = 'BASE TABLE'
-      AND TABLE_NAME <> '_prisma_migrations'
     ORDER BY TABLE_NAME
   `);
 
-  return rows.map((row) => row.tableName).filter(Boolean);
+  return selectApplicationTableNames(rows);
 }
 
 async function getAutoIncrementTables(connection) {
@@ -49,11 +55,10 @@ async function getAutoIncrementTables(connection) {
     FROM information_schema.columns
     WHERE table_schema = DATABASE()
       AND EXTRA LIKE '%auto_increment%'
-      AND TABLE_NAME <> '_prisma_migrations'
     ORDER BY TABLE_NAME
   `);
 
-  return rows.map((row) => row.tableName).filter(Boolean);
+  return selectApplicationTableNames(rows);
 }
 
 async function clearDatabase() {
@@ -102,7 +107,18 @@ async function clearDatabase() {
   }
 }
 
-clearDatabase().catch((error) => {
-  console.error(error.message || error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  clearDatabase().catch((error) => {
+    console.error(error.message || error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  clearDatabase,
+  getApplicationTables,
+  getAutoIncrementTables,
+  getConnectionOptions,
+  quoteIdentifier,
+  selectApplicationTableNames,
+};

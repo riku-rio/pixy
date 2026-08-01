@@ -3,14 +3,30 @@ const { prisma } = require("../../config/prisma");
 const { aiConfig } = require("../../config/ai");
 const { buildTicketContext } = require("../../ai/buildTicketContext");
 const { buildTicketPrompt } = require("../../ai/buildTicketPrompt");
+const {
+  buildAssistantTicketPrompt,
+} = require("../../ai/buildAssistantTicketPrompt");
 const { generateAiReply } = require("../../ai/aiClient");
 const { parseAiOutput } = require("../../ai/parseAiAction");
+const {
+  getGuildAgentActionAvailability,
+  getSubscriptionRejectionMessage,
+  getSubscriptionRejectionStatus,
+  loadGuildEntitlementState,
+} = require("../../billing/entitlementService");
+const {
+  refreshOpenTicketControlForChannel,
+} = require("../../billing/ticketControlRefresh");
 const { splitDiscordMessage } = require("../../utils/splitDiscordMessage");
 const { validateTicketAction } = require("../../utils/tickets/actions/ticketActionValidator");
 const { executeTicketAction } = require("../../utils/tickets/actions/ticketActionExecutor");
 const { TICKET_ACTIONS } = require("../../utils/tickets/actions/ticketActionTypes");
 
 const channelCooldowns = new Map();
+const channelControlPlans = new Map();
+const SUBSCRIPTION_BLOCKED_AGENT_OUTPUT_STATUS =
+  "action_rejected:subscription_agent_output_blocked";
+
 const MESSAGES = {
   ar: {
     tooLong: "رسالتك طويلة جدًا على Pixy AI. حاول تخليها أقل من {max} حرف.",
@@ -19,6 +35,8 @@ const MESSAGES = {
     emptyResponse: "مش قادر أطلع رد مفيد دلوقتي. حد من الدعم يقدر يساعدك هنا.",
     invalidActionJson: "حصلت مشكلة بسيطة وأنا بحاول أفهم الطلب. جرّب تكتب طلبك مرة تانية بشكل أوضح.",
     actionFailed: "مش قادر أنفّذ الطلب ده دلوقتي. جرّب تاني أو استنى حد من الدعم يساعدك.",
+    assistantActionBlocked:
+      "أقدر أساعدك بالمعلومات هنا، لكن إجراءات إغلاق أو إعادة تسمية أو تصعيد التذكرة تحتاج Pixy Pro. اكتب تفاصيل طلبك وسأحاول مساعدتك بنص عادي.",
   },
   en: {
     tooLong: "Your message is too long for Pixy AI to process. Please keep it under {max} characters.",
@@ -27,6 +45,8 @@ const MESSAGES = {
     emptyResponse: "I couldn't generate a helpful reply right now. A support member can still help you here.",
     invalidActionJson: "Something went wrong while I was trying to understand the request. Please try again more clearly.",
     actionFailed: "I can't complete that request right now. Please try again or wait for a support member to help.",
+    assistantActionBlocked:
+      "I can still help with information here, but closing, renaming, and escalating tickets require Pixy Pro. Please describe what you need and I'll respond with normal text.",
   },
 };
 
@@ -103,7 +123,57 @@ async function logAiUsage({ message, config, aiResult, status, error }) {
   }).catch((logError) => console.error("Failed to write AI usage log:", logError));
 }
 
-module.exports = {
+function buildPromptForEntitlement({
+  entitlement,
+  context,
+  config,
+  userName,
+  userMessage,
+}) {
+  const common = {
+    guildName: context.guildName,
+    channelName: context.channelName,
+    userName,
+    userMessage,
+    recentMessages: context.recentMessages,
+  };
+
+  if (!entitlement.premiumEntitled) {
+    return buildAssistantTicketPrompt(common);
+  }
+
+  return buildTicketPrompt({
+    ...common,
+    learnedQna: context.learnedQna,
+    learnedFreeform: context.learnedFreeform,
+    adminRoutes: context.adminRoutes,
+    customSystemPrompt: config.aiSystemPrompt,
+  });
+}
+
+async function refreshControlsForPlanChange({
+  message,
+  ticket,
+  entitlement,
+  refreshControl = refreshOpenTicketControlForChannel,
+}) {
+  const channelId = message.channelId || message.channel?.id;
+  if (!channelId || channelControlPlans.get(channelId) === entitlement.plan) {
+    return null;
+  }
+
+  const result = await refreshControl({
+    guildId: message.guild.id,
+    channel: message.channel,
+    aiEnabled: ticket.aiEnabled !== false,
+    entitlement,
+  });
+
+  channelControlPlans.set(channelId, entitlement.plan);
+  return result;
+}
+
+const messageCreateEvent = {
   name: Events.MessageCreate,
   async execute(message) {
     try {
@@ -112,14 +182,21 @@ module.exports = {
       const channelId = message.channelId;
       const guildId = message.guild.id;
 
-      const [config, ticket, ignoredChannel] = await Promise.all([
+      const [config, ticket, ignoredChannel, entitlement] = await Promise.all([
         prisma.guildConfig.findUnique({ where: { guildId } }),
         prisma.ticketChannel.findUnique({ where: { channelId } }),
         prisma.guildIgnoredChannel.findUnique({
           where: { guildId_channelId: { guildId, channelId } },
         }),
+        loadGuildEntitlementState(guildId),
       ]);
       if (!config?.enabled || config.aiEnabled === false || !ticket || ticket.closed || ticket.aiEnabled === false || ignoredChannel) return;
+
+      await refreshControlsForPlanChange({
+        message,
+        ticket,
+        entitlement,
+      });
 
       const now = Date.now();
       const lastReplyAt = channelCooldowns.get(channelId) || 0;
@@ -138,17 +215,17 @@ module.exports = {
       await prisma.ticketChannel.update({ where: { channelId }, data: { lastUserMessageAt: new Date() } });
       await message.channel.sendTyping();
 
-      const context = await buildTicketContext({ message });
-      const messages = buildTicketPrompt({
-        guildName: context.guildName,
-        channelName: context.channelName,
+      const context = await buildTicketContext({
+        message,
+        includeLearnedKnowledge: entitlement.premiumEntitled,
+        includeAdminRoutes: entitlement.premiumEntitled,
+      });
+      const messages = buildPromptForEntitlement({
+        entitlement,
+        context,
+        config,
         userName: message.member?.displayName || message.author.username,
         userMessage,
-        recentMessages: context.recentMessages,
-        learnedQna: context.learnedQna,
-        learnedFreeform: context.learnedFreeform,
-        adminRoutes: context.adminRoutes,
-        customSystemPrompt: config.aiSystemPrompt,
       });
 
       let aiResult;
@@ -167,17 +244,61 @@ module.exports = {
 
       const parsed = parseAiOutput(aiResult.text);
       if (parsed.kind === "invalid_json") {
-        await logAiUsage({ message, config, aiResult, status: "invalid_action_json", error: parsed.error || aiResult.text });
-        await safeReply(message, t(lang, "invalidActionJson"));
+        const assistantBlocked = !entitlement.premiumEntitled;
+        await logAiUsage({
+          message,
+          config,
+          aiResult,
+          status: assistantBlocked
+            ? SUBSCRIPTION_BLOCKED_AGENT_OUTPUT_STATUS
+            : "invalid_action_json",
+          error: parsed.error || aiResult.text,
+        });
+        await safeReply(
+          message,
+          t(lang, assistantBlocked ? "assistantActionBlocked" : "invalidActionJson")
+        );
         return;
       }
 
       if (parsed.kind === "action_request") {
+        if (!entitlement.premiumEntitled) {
+          await logAiUsage({
+            message,
+            config,
+            aiResult,
+            status: SUBSCRIPTION_BLOCKED_AGENT_OUTPUT_STATUS,
+            error: "Assistant-only mode returned a ticket action request.",
+          });
+          await safeReply(message, t(lang, "assistantActionBlocked"));
+          return;
+        }
+
         if (!aiConfig.agentActionsEnabled) {
           await logAiUsage({ message, config, aiResult, status: "action_rejected:agent_disabled", error: "AI agent actions are disabled." });
           await safeReply(message, t(lang, "actionFailed"));
           return;
         }
+
+        const agentAvailability = await getGuildAgentActionAvailability(guildId);
+        if (!agentAvailability.available) {
+          await logAiUsage({
+            message,
+            config,
+            aiResult,
+            status:
+              getSubscriptionRejectionStatus(agentAvailability.code) ||
+              `action_rejected:${agentAvailability.code}`,
+            error: agentAvailability.code,
+          });
+          await safeReply(
+            message,
+            getSubscriptionRejectionMessage(agentAvailability.code) ||
+              t(lang, "actionFailed")
+          );
+          return;
+        }
+
         if (parsed.action === TICKET_ACTIONS.CLOSE_TICKET && !hasExplicitCloseIntent(userMessage)) {
           await logAiUsage({ message, config, aiResult, status: "action_rejected:close_not_explicit", error: "Current message did not explicitly request closing the ticket." });
           await safeReply(message, t(lang, "actionFailed"));
@@ -199,9 +320,22 @@ module.exports = {
             await prisma.ticketChannel.update({ where: { channelId }, data: { lastAiReplyAt: new Date() } });
           }
         } catch (error) {
-          await logAiUsage({ message, config, aiResult, status: `action_failed:${validation.action}`, error: error?.message || error });
+          const subscriptionStatus = getSubscriptionRejectionStatus(error?.code);
+          await logAiUsage({
+            message,
+            config,
+            aiResult,
+            status:
+              subscriptionStatus ||
+              `action_failed:${validation.action}`,
+            error: error?.message || error,
+          });
           console.error("AI ticket action execution failed:", error);
-          await safeReply(message, t(lang, "actionFailed"));
+          await safeReply(
+            message,
+            getSubscriptionRejectionMessage(error?.code) ||
+              t(lang, "actionFailed")
+          );
         }
         return;
       }
@@ -220,3 +354,10 @@ module.exports = {
     }
   },
 };
+
+module.exports = Object.assign(messageCreateEvent, {
+  SUBSCRIPTION_BLOCKED_AGENT_OUTPUT_STATUS,
+  buildPromptForEntitlement,
+  channelControlPlans,
+  refreshControlsForPlanChange,
+});

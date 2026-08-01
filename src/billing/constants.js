@@ -1,0 +1,93 @@
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const BILLING_PLANS = Object.freeze({
+  TRIAL: "trial",
+  EXPIRED: "expired",
+  PRO: "pro",
+  PARTNER: "partner",
+});
+
+const BILLING_EVENT_ACTIONS = Object.freeze({
+  TRIAL_STARTED: "trial_started",
+  PRO_ACTIVATED: "pro_activated",
+  PRO_RENEWED: "pro_renewed",
+  PRO_CUSTOMIZED: "pro_customized",
+  PRO_DEACTIVATED: "pro_deactivated",
+  PARTNER_ADDED: "partner_added",
+  PARTNER_REMOVED: "partner_removed",
+});
+
+const BILLING_CAPABILITIES = Object.freeze({
+  GENERIC_AI_REPLIES: "generic_ai_replies",
+  TICKET_AI_TOGGLE: "ticket_ai_toggle",
+  LEARNED_KNOWLEDGE_CONTEXT: "learned_knowledge_context",
+  LEARNED_KNOWLEDGE_WRITE: "learned_knowledge_write",
+  AGENT_ACTIONS: "agent_actions",
+  ESCALATE_TICKET: "escalate_ticket",
+  RENAME_TICKET: "rename_ticket",
+  CLOSE_TICKET: "close_ticket",
+});
+
+const FREE_CAPABILITIES = Object.freeze({
+  [BILLING_CAPABILITIES.GENERIC_AI_REPLIES]: true,
+  [BILLING_CAPABILITIES.TICKET_AI_TOGGLE]: true,
+  [BILLING_CAPABILITIES.LEARNED_KNOWLEDGE_CONTEXT]: false,
+  [BILLING_CAPABILITIES.LEARNED_KNOWLEDGE_WRITE]: false,
+  [BILLING_CAPABILITIES.AGENT_ACTIONS]: false,
+  [BILLING_CAPABILITIES.ESCALATE_TICKET]: false,
+  [BILLING_CAPABILITIES.RENAME_TICKET]: false,
+  [BILLING_CAPABILITIES.CLOSE_TICKET]: false,
+});
+
+const PREMIUM_CAPABILITIES = Object.freeze({
+  [BILLING_CAPABILITIES.GENERIC_AI_REPLIES]: true,
+  [BILLING_CAPABILITIES.TICKET_AI_TOGGLE]: true,
+  [BILLING_CAPABILITIES.LEARNED_KNOWLEDGE_CONTEXT]: true,
+  [BILLING_CAPABILITIES.LEARNED_KNOWLEDGE_WRITE]: true,
+  [BILLING_CAPABILITIES.AGENT_ACTIONS]: true,
+  [BILLING_CAPABILITIES.ESCALATE_TICKET]: true,
+  [BILLING_CAPABILITIES.RENAME_TICKET]: true,
+  [BILLING_CAPABILITIES.CLOSE_TICKET]: true,
+});
+
+const PLAN_CAPABILITY_MAP = Object.freeze({
+  [BILLING_PLANS.EXPIRED]: FREE_CAPABILITIES,
+  [BILLING_PLANS.TRIAL]: PREMIUM_CAPABILITIES,
+  [BILLING_PLANS.PRO]: PREMIUM_CAPABILITIES,
+  [BILLING_PLANS.PARTNER]: PREMIUM_CAPABILITIES,
+});
+
+const PREMIUM_PLAN_VALUES = Object.freeze([
+  BILLING_PLANS.TRIAL,
+  BILLING_PLANS.PRO,
+  BILLING_PLANS.PARTNER,
+]);
+
+const STANDARD_TRIAL_DURATION_MS = 7 * DAY_MS;
+const STANDARD_PRO_DURATION_MS = 30 * DAY_MS;
+
+const CUSTOM_DURATION_UNITS = Object.freeze({
+  d: Object.freeze({ key: "d", label: "day", days: 1, milliseconds: DAY_MS }),
+  w: Object.freeze({ key: "w", label: "week", days: 7, milliseconds: 7 * DAY_MS }),
+  m: Object.freeze({ key: "m", label: "month", days: 30, milliseconds: 30 * DAY_MS }),
+  y: Object.freeze({ key: "y", label: "year", days: 365, milliseconds: 365 * DAY_MS }),
+});
+
+const MAX_CUSTOM_DURATION_DAYS = 10 * 365;
+const MAX_CUSTOM_DURATION_MS = MAX_CUSTOM_DURATION_DAYS * DAY_MS;
+
+module.exports = {
+  BILLING_CAPABILITIES,
+  BILLING_EVENT_ACTIONS,
+  BILLING_PLANS,
+  CUSTOM_DURATION_UNITS,
+  DAY_MS,
+  FREE_CAPABILITIES,
+  MAX_CUSTOM_DURATION_DAYS,
+  MAX_CUSTOM_DURATION_MS,
+  PLAN_CAPABILITY_MAP,
+  PREMIUM_CAPABILITIES,
+  PREMIUM_PLAN_VALUES,
+  STANDARD_PRO_DURATION_MS,
+  STANDARD_TRIAL_DURATION_MS,
+};

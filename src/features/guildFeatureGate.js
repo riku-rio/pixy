@@ -1,18 +1,37 @@
-const { prisma } = require("../config/prisma");
-const { getDisabledActionCode } = require("./guildFeatureRules");
+const {
+  getGuildAgentActionAvailability,
+  getGuildTicketActionAvailability,
+} = require("../billing/entitlementService");
 
-async function getGuildActionRejection(guildId, action) {
-  if (!guildId) return "invalid_guild";
-  const settings = await prisma.guildSetting.findUnique({
-    where: { guildId },
-    select: {
-      closeTicketEnabled: true,
-      renameReviewEnabled: true,
-      escalationEnabled: true,
-      agentActionsEnabled: true,
-    },
-  });
-  return getDisabledActionCode(settings, action);
+async function getGuildActionAvailability(guildId, action, options = {}) {
+  if (!guildId) {
+    return {
+      available: false,
+      code: "invalid_guild",
+      action,
+    };
+  }
+
+  return getGuildTicketActionAvailability(guildId, action, options);
 }
 
-module.exports = { getGuildActionRejection };
+async function getGuildActionRejection(guildId, action, options = {}) {
+  const availability = await getGuildActionAvailability(
+    guildId,
+    action,
+    options
+  );
+  return availability.available ? null : availability.code;
+}
+
+async function getGuildAgentActionRejection(guildId, options = {}) {
+  if (!guildId) return "invalid_guild";
+  const availability = await getGuildAgentActionAvailability(guildId, options);
+  return availability.available ? null : availability.code;
+}
+
+module.exports = {
+  getGuildActionAvailability,
+  getGuildActionRejection,
+  getGuildAgentActionRejection,
+};

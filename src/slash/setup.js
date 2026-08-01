@@ -7,6 +7,10 @@ const {
   ChannelSelectMenuBuilder,
   ChannelType,
 } = require("discord.js");
+const { startTrialOnce } = require("../billing/billingService");
+const {
+  refreshOpenTicketControlsAfterBillingMutation,
+} = require("../billing/ticketControlRefresh");
 const { prisma } = require("../config/prisma");
 
 const EPHEMERAL = 64;
@@ -57,12 +61,44 @@ function categorySelectPayload(userId) {
   };
 }
 
-async function saveCategory(guildId, categoryId) {
-  return prisma.guildConfig.upsert({
+async function saveCategory(guildId, categoryId, options = {}) {
+  const client = options.client || prisma;
+  return client.guildConfig.upsert({
     where: { guildId },
     create: { guildId, ticketCategoryId: categoryId, enabled: true, maxLearnedItems: 50 },
     update: { ticketCategoryId: categoryId, enabled: true },
   });
+}
+
+async function saveCategoryAndStartTrial(guildId, categoryId, options = {}) {
+  const client = options.client || prisma;
+  const startTrial = options.startTrial || startTrialOnce;
+  const refreshControls =
+    options.refreshControls || refreshOpenTicketControlsAfterBillingMutation;
+  const config = await saveCategory(guildId, categoryId, { client });
+
+  await startTrial(guildId, { client });
+
+  if (options.guild || options.discordClient) {
+    await refreshControls(guildId, {
+      client,
+      guild: options.guild,
+      discordClient: options.discordClient,
+      logger: options.logger,
+    }).catch((error) => {
+      console.error("Failed to refresh ticket controls after setup billing initialization:", error);
+    });
+  }
+
+  return config;
+}
+
+async function completeExistingCategorySetup(guildId, categoryId, options = {}) {
+  return saveCategoryAndStartTrial(guildId, categoryId, options);
+}
+
+async function completeAutomaticCategorySetup(guildId, categoryId, options = {}) {
+  return saveCategoryAndStartTrial(guildId, categoryId, options);
 }
 
 async function createOrFind(guild) {
@@ -76,7 +112,7 @@ async function createOrFind(guild) {
   return guild.channels.create({ name: AUTO_NAMES[0], type: ChannelType.GuildCategory, reason: "Pixy AI ticket category setup" });
 }
 
-module.exports = {
+const command = {
   data: new SlashCommandBuilder()
     .setName("setup")
     .setDescription("Setup the Pixy AI ticket category.")
@@ -109,7 +145,14 @@ module.exports = {
           await interaction.editReply({ content: "I need Manage Channels permission to create the ticket category automatically.", components: [] });
           return;
         }
-        await saveCategory(interaction.guild.id, category.id);
+        await completeAutomaticCategorySetup(
+          interaction.guild.id,
+          category.id,
+          {
+            guild: interaction.guild,
+            discordClient: interaction.client,
+          }
+        );
         await interaction.editReply({ content: `Ticket category saved as **${category.name}**. Configure the Groq key and features with /pixy-settings.`, components: [] });
       },
     },
@@ -129,9 +172,28 @@ module.exports = {
           await interaction.editReply({ content: "Invalid category selected.", components: [] });
           return;
         }
-        await saveCategory(interaction.guild.id, category.id);
+        await completeExistingCategorySetup(
+          interaction.guild.id,
+          category.id,
+          {
+            guild: interaction.guild,
+            discordClient: interaction.client,
+          }
+        );
         await interaction.editReply({ content: `Ticket category saved as **${category.name}**. Configure the Groq key and features with /pixy-settings.`, components: [] });
       },
     },
   ],
 };
+
+module.exports = Object.assign(command, {
+  AUTO_NAMES,
+  CATEGORY_SELECT,
+  CREATE_AUTO,
+  SELECT_EXISTING,
+  completeAutomaticCategorySetup,
+  completeExistingCategorySetup,
+  createOrFind,
+  saveCategory,
+  saveCategoryAndStartTrial,
+});

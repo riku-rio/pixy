@@ -3,6 +3,9 @@ const {
   DISABLED_MESSAGES,
   getTicketActionAvailability,
 } = require("../features/ticketActionAvailability");
+const {
+  stopUnavailableLearnWrite,
+} = require("../features/learnSubscription");
 
 const DEFAULT_ERROR_MESSAGE = "An error occurred while executing this interaction.";
 
@@ -48,9 +51,25 @@ async function safeReply(interaction, payload) {
   }
 }
 
-async function stopUnavailableTicketAction(interaction) {
+async function refreshExpiredTicketControls(interaction, aiEnabled) {
+  if (!interaction.channel) return { ok: false, code: "missing_channel" };
+
+  const {
+    refreshOpenTicketControlForChannel,
+  } = require("../billing/ticketControlRefresh");
+
+  return refreshOpenTicketControlForChannel({
+    guildId: interaction.guild?.id,
+    channel: interaction.channel,
+    aiEnabled,
+  });
+}
+
+async function stopUnavailableTicketAction(interaction, options = {}) {
   try {
-    const availability = await getTicketActionAvailability(interaction);
+    const getAvailability =
+      options.getAvailability || getTicketActionAvailability;
+    const availability = await getAvailability(interaction, options);
     if (!availability || availability.available) return false;
 
     if (availability.code === "no_support_routes") {
@@ -62,10 +81,41 @@ async function stopUnavailableTicketAction(interaction) {
     }
 
     await safeReply(interaction, availability.message);
+
+    if (availability.refreshControls) {
+      const refreshControlMessage =
+        options.refreshControlMessage || refreshExpiredTicketControls;
+      await refreshControlMessage(
+        interaction,
+        availability.aiEnabled
+      ).catch((error) => {
+        console.error("Failed to refresh expired ticket controls:", error);
+      });
+    }
+
     return true;
   } catch (error) {
     console.error("Ticket action availability preflight failed:", error);
     return false;
+  }
+}
+
+async function stopUnavailableLearnInteraction(interaction, options = {}) {
+  try {
+    const stopLearnWrite =
+      options.stopLearnWrite || stopUnavailableLearnWrite;
+
+    return await stopLearnWrite(interaction, {
+      ...options,
+      reply: safeReply,
+    });
+  } catch (error) {
+    console.error("Learn subscription preflight failed:", error);
+    await safeReply(
+      interaction,
+      "I could not verify the server's subscription right now. Please try again."
+    );
+    return true;
   }
 }
 
@@ -247,7 +297,7 @@ async function handleAutocomplete(interaction) {
   }
 }
 
-module.exports = {
+const interactionCreateEvent = {
   name: Events.InteractionCreate,
 
   async execute(interaction) {
@@ -256,7 +306,15 @@ module.exports = {
     if (interaction.isChatInputCommand()) {
       const command = interaction.client.commands.get(interaction.commandName);
       if (!command) return safeReply(interaction, "Unknown command.");
-      await runInteraction(interaction, `Command ${interaction.commandName}`, command, () => command.execute(interaction));
+      await runInteraction(
+        interaction,
+        `Command ${interaction.commandName}`,
+        command,
+        async () => {
+          if (await stopUnavailableLearnInteraction(interaction)) return;
+          await command.execute(interaction);
+        }
+      );
       return;
     }
 
@@ -275,9 +333,26 @@ module.exports = {
     }
 
     if (interaction.isModalSubmit()) {
-      if (await stopUnavailableTicketAction(interaction)) return;
       const handler = findModalHandler(interaction);
-      if (handler) await runInteraction(interaction, `Modal ${interaction.customId}`, handler, () => handler.execute(interaction));
+      if (!handler) return;
+      await runInteraction(
+        interaction,
+        `Modal ${interaction.customId}`,
+        handler,
+        async () => {
+          if (await stopUnavailableLearnInteraction(interaction)) return;
+          if (await stopUnavailableTicketAction(interaction)) return;
+          await handler.execute(interaction);
+        }
+      );
     }
   },
 };
+
+module.exports = Object.assign(interactionCreateEvent, {
+  getInteractionErrorMessage,
+  refreshExpiredTicketControls,
+  safeReply,
+  stopUnavailableLearnInteraction,
+  stopUnavailableTicketAction,
+});
