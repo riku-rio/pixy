@@ -1,8 +1,10 @@
 const { Events, ChannelType } = require("discord.js");
 const { prisma } = require("../../config/prisma");
 const {
-  buildTicketControlContent,
-  buildCombinedTicketControlComponents,
+  loadGuildEntitlementState,
+} = require("../../billing/entitlementService");
+const {
+  buildTicketControlPayload,
 } = require("../../components/ticketAiControls");
 
 module.exports = {
@@ -30,6 +32,8 @@ module.exports = {
       });
       if (ignored) return;
 
+      const entitlement = await loadGuildEntitlementState(channel.guild.id);
+
       await prisma.ticketChannel.upsert({
         where: { channelId: channel.id },
         create: {
@@ -55,11 +59,9 @@ module.exports = {
         },
       });
 
-      await channel.send({
-        content: buildTicketControlContent(true),
-        components: buildCombinedTicketControlComponents(true),
-        allowedMentions: { parse: [] },
-      });
+      await channel.send(
+        buildTicketControlPayload(true, { plan: entitlement.plan })
+      );
     } catch (error) {
       console.error("ChannelCreate ticket handler failed:", error);
     }
