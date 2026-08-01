@@ -1,5 +1,6 @@
 const {
   BILLING_EVENT_ACTIONS,
+  MAX_CUSTOM_DURATION_MS,
   STANDARD_PRO_DURATION_MS,
 } = require("./constants");
 const {
@@ -8,6 +9,13 @@ const {
   normalizeGuildId,
   resolveFallbackPlan,
 } = require("./billingService");
+
+const MAX_TRANSACTION_RETRIES = 3;
+const DEFAULT_TRANSACTION_OPTIONS = Object.freeze({
+  isolationLevel: "Serializable",
+  maxWait: 5_000,
+  timeout: 15_000,
+});
 
 class OwnerBillingMutationError extends Error {
   constructor(code, message) {
@@ -35,16 +43,47 @@ function normalizeActorUserId(value) {
   return actorUserId;
 }
 
-function addMilliseconds(date, milliseconds) {
-  const timestamp = date.getTime() + milliseconds;
-  const result = new Date(timestamp);
-  if (!Number.isFinite(timestamp) || Number.isNaN(result.getTime())) {
+function validateExpiryDate(value, nowValue, options = {}) {
+  const now = normalizeNow(nowValue);
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  const timestamp = date.getTime();
+
+  if (!Number.isFinite(timestamp) || Number.isNaN(timestamp)) {
     throw new OwnerBillingMutationError(
       "invalid_expiry",
       "The requested expiration date is outside the supported range."
     );
   }
-  return result;
+
+  if (options.allowNow !== true && timestamp <= now.getTime()) {
+    throw new OwnerBillingMutationError(
+      "invalid_expiry",
+      "The requested expiration date must be later than the current time."
+    );
+  }
+
+  const maxTimestamp = now.getTime() + MAX_CUSTOM_DURATION_MS;
+  if (!Number.isFinite(maxTimestamp) || timestamp > maxTimestamp) {
+    throw new OwnerBillingMutationError(
+      "expiry_too_far",
+      "The resulting Pro expiry cannot be more than 10 years from now."
+    );
+  }
+
+  return date;
+}
+
+function addMilliseconds(date, milliseconds, options = {}) {
+  const base = date instanceof Date ? new Date(date.getTime()) : new Date(date);
+  if (Number.isNaN(base.getTime()) || !Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+    throw new OwnerBillingMutationError(
+      "invalid_expiry",
+      "The requested expiration date is outside the supported range."
+    );
+  }
+
+  const result = new Date(base.getTime() + milliseconds);
+  return validateExpiryDate(result, options.now || base);
 }
 
 async function persistBilling(transaction, guildId, current, data) {
@@ -90,6 +129,58 @@ function buildAuditData({
   };
 }
 
+function isRetryableTransactionError(error) {
+  if (!error || error instanceof OwnerBillingMutationError) return false;
+  const codes = [error.code, error.cause?.code]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+  const errno = Number(error.errno ?? error.cause?.errno);
+  const message = String(error.message || "").toLowerCase();
+
+  return (
+    codes.includes("P2034") ||
+    codes.includes("ER_LOCK_DEADLOCK") ||
+    codes.includes("ER_LOCK_WAIT_TIMEOUT") ||
+    errno === 1213 ||
+    errno === 1205 ||
+    message.includes("deadlock") ||
+    message.includes("write conflict")
+  );
+}
+
+async function delay(milliseconds) {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function runSerializableTransaction(client, callback, options = {}) {
+  const transactionOptions = {
+    ...DEFAULT_TRANSACTION_OPTIONS,
+    ...(options.transactionOptions || {}),
+  };
+  const maxRetries = Number.isInteger(options.maxTransactionRetries)
+    ? Math.max(0, options.maxTransactionRetries)
+    : MAX_TRANSACTION_RETRIES;
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await client.$transaction(callback, transactionOptions);
+    } catch (error) {
+      if (attempt >= maxRetries || !isRetryableTransactionError(error)) {
+        throw error;
+      }
+      await delay(20 * (attempt + 1));
+    }
+  }
+}
+
+async function lockBillingRow(transaction, guildId) {
+  if (typeof transaction.$queryRawUnsafe !== "function") return;
+  await transaction.$queryRawUnsafe(
+    "SELECT `guildId` FROM `GuildBilling` WHERE `guildId` = ? FOR UPDATE",
+    guildId
+  );
+}
+
 async function runPostMutationRefresh(guildId, options = {}) {
   const refreshControls =
     options.refreshControls ||
@@ -131,43 +222,48 @@ async function mutateBillingWithAudit({
   const now = normalizeNow(options.now ?? new Date());
   const client = options.client || getDefaultPrisma();
 
-  const committed = await client.$transaction(async (transaction) => {
-    const before = await transaction.guildBilling.findUnique({
-      where: { guildId: normalizedGuildId },
-    });
-    const beforeSummary = buildBillingSummary(before, { now });
-    const mutation = await mutate({
-      transaction,
-      guildId: normalizedGuildId,
-      actorUserId: normalizedActorUserId,
-      now,
-      before,
-      beforeSummary,
-    });
-    const afterSummary = buildBillingSummary(mutation.after, { now });
-    const eventData = buildAuditData({
-      guildId: normalizedGuildId,
-      actorUserId: normalizedActorUserId,
-      action,
-      beforeSummary,
-      afterSummary,
-      ...mutation.audit,
-    });
-    const event = await transaction.billingEvent.create({ data: eventData });
-    const { after, audit, result, ...details } = mutation;
+  const committed = await runSerializableTransaction(
+    client,
+    async (transaction) => {
+      await lockBillingRow(transaction, normalizedGuildId);
+      const before = await transaction.guildBilling.findUnique({
+        where: { guildId: normalizedGuildId },
+      });
+      const beforeSummary = buildBillingSummary(before, { now });
+      const mutation = await mutate({
+        transaction,
+        guildId: normalizedGuildId,
+        actorUserId: normalizedActorUserId,
+        now,
+        before,
+        beforeSummary,
+      });
+      const afterSummary = buildBillingSummary(mutation.after, { now });
+      const eventData = buildAuditData({
+        guildId: normalizedGuildId,
+        actorUserId: normalizedActorUserId,
+        action,
+        beforeSummary,
+        afterSummary,
+        ...mutation.audit,
+      });
+      const event = await transaction.billingEvent.create({ data: eventData });
+      const { after, audit, result, ...details } = mutation;
 
-    return {
-      guildId: normalizedGuildId,
-      now,
-      before,
-      after,
-      beforeSummary,
-      afterSummary,
-      event,
-      ...details,
-      ...result,
-    };
-  });
+      return {
+        guildId: normalizedGuildId,
+        now,
+        before,
+        after,
+        beforeSummary,
+        afterSummary,
+        event,
+        ...details,
+        ...result,
+      };
+    },
+    options
+  );
 
   const refresh = await runPostMutationRefresh(normalizedGuildId, {
     ...options,
@@ -192,7 +288,7 @@ async function activatePro(guildId, actorUserId, options = {}) {
         );
       }
 
-      const proEndsAt = addMilliseconds(now, STANDARD_PRO_DURATION_MS);
+      const proEndsAt = addMilliseconds(now, STANDARD_PRO_DURATION_MS, { now });
       const after = await persistBilling(transaction, normalizedGuildId, before, {
         proStartedAt: now,
         proEndsAt,
@@ -229,7 +325,8 @@ async function renewPro(guildId, actorUserId, options = {}) {
       const previousProEndsAt = new Date(before.proEndsAt);
       const proEndsAt = addMilliseconds(
         previousProEndsAt,
-        STANDARD_PRO_DURATION_MS
+        STANDARD_PRO_DURATION_MS,
+        { now }
       );
       const after = await transaction.guildBilling.update({
         where: { guildId: normalizedGuildId },
@@ -267,7 +364,7 @@ async function customizePro(guildId, actorUserId, duration, options = {}) {
       const active = isActiveUntil(before?.proEndsAt, now);
       const previousProEndsAt = before?.proEndsAt ? new Date(before.proEndsAt) : null;
       const extensionBase = active ? previousProEndsAt : now;
-      const proEndsAt = addMilliseconds(extensionBase, duration.milliseconds);
+      const proEndsAt = addMilliseconds(extensionBase, duration.milliseconds, { now });
       const after = await persistBilling(transaction, normalizedGuildId, before, {
         proStartedAt: active ? before.proStartedAt || now : now,
         proEndsAt,
@@ -326,6 +423,86 @@ async function deactivatePro(guildId, actorUserId, options = {}) {
   });
 }
 
+async function addPartner(guildId, actorUserId, options = {}) {
+  return mutateBillingWithAudit({
+    guildId,
+    actorUserId,
+    action: BILLING_EVENT_ACTIONS.PARTNER_ADDED,
+    options,
+    async mutate({ transaction, guildId: normalizedGuildId, now, before, beforeSummary }) {
+      if (before?.partnerActive === true) {
+        throw new OwnerBillingMutationError(
+          "partner_already_active",
+          "This guild already has active Partner entitlement. No changes were made."
+        );
+      }
+
+      const after = await persistBilling(transaction, normalizedGuildId, before, {
+        partnerActive: true,
+        partnerSince: now,
+      });
+
+      return {
+        after,
+        audit: {
+          metadata: {
+            partnerSince: now.toISOString(),
+            previousFallbackPlan: beforeSummary.plan,
+          },
+        },
+      };
+    },
+  });
+}
+
+async function removePartner(guildId, actorUserId, options = {}) {
+  return mutateBillingWithAudit({
+    guildId,
+    actorUserId,
+    action: BILLING_EVENT_ACTIONS.PARTNER_REMOVED,
+    options,
+    async mutate({ transaction, guildId: normalizedGuildId, now, before }) {
+      if (before?.partnerActive !== true) {
+        throw new OwnerBillingMutationError(
+          "partner_not_active",
+          "This guild does not currently have Partner entitlement. No changes were made."
+        );
+      }
+
+      const previousPartnerSince = before.partnerSince
+        ? new Date(before.partnerSince)
+        : null;
+      const after = await transaction.guildBilling.update({
+        where: { guildId: normalizedGuildId },
+        data: {
+          partnerActive: false,
+          partnerSince: null,
+        },
+      });
+      const fallbackPlan = resolveFallbackPlan(after, now);
+
+      return {
+        after,
+        fallbackPlan,
+        audit: {
+          metadata: {
+            previousPartnerSince: previousPartnerSince?.toISOString() || null,
+            fallbackPlan,
+          },
+        },
+      };
+    },
+  });
+}
+
+async function listActivePartners(options = {}) {
+  const client = options.client || getDefaultPrisma();
+  return client.guildBilling.findMany({
+    where: { partnerActive: true },
+    orderBy: [{ partnerSince: "asc" }, { guildId: "asc" }],
+  });
+}
+
 async function loadOwnerBillingStatus(guildId, options = {}) {
   const normalizedGuildId = normalizeGuildId(guildId);
   const client = options.client || getDefaultPrisma();
@@ -348,17 +525,26 @@ async function loadOwnerBillingStatus(guildId, options = {}) {
 }
 
 module.exports = {
+  DEFAULT_TRANSACTION_OPTIONS,
+  MAX_TRANSACTION_RETRIES,
   OwnerBillingMutationError,
   activatePro,
   addMilliseconds,
+  addPartner,
   buildAuditData,
   customizePro,
   deactivatePro,
+  isRetryableTransactionError,
+  listActivePartners,
   loadOwnerBillingStatus,
+  lockBillingRow,
   mutateBillingWithAudit,
   normalizeActorUserId,
   normalizeNow,
   persistBilling,
+  removePartner,
   renewPro,
   runPostMutationRefresh,
+  runSerializableTransaction,
+  validateExpiryDate,
 };
