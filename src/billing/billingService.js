@@ -1,8 +1,10 @@
 const {
+  BILLING_EVENT_ACTIONS,
   BILLING_PLANS,
   DAY_MS,
   PLAN_CAPABILITY_MAP,
   PREMIUM_PLAN_VALUES,
+  STANDARD_TRIAL_DURATION_MS,
 } = require("./constants");
 
 const PLAN_LABELS = Object.freeze({
@@ -11,6 +13,7 @@ const PLAN_LABELS = Object.freeze({
   [BILLING_PLANS.PRO]: "Pro",
   [BILLING_PLANS.PARTNER]: "Partner",
 });
+const SYSTEM_BILLING_ACTOR = "system";
 
 function getDefaultPrisma() {
   return require("../config/prisma").prisma;
@@ -39,6 +42,14 @@ function isActiveUntil(value, nowValue = new Date()) {
   if (!endsAt) return false;
   const now = normalizeNow(nowValue);
   return endsAt.getTime() > now.getTime();
+}
+
+function isUniqueConstraintError(error) {
+  const codes = [error?.code, error?.cause?.code]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+  const errno = Number(error?.errno ?? error?.cause?.errno);
+  return codes.includes("P2002") || codes.includes("ER_DUP_ENTRY") || errno === 1062;
 }
 
 function resolveFallbackPlan(billing, nowValue = new Date()) {
@@ -190,8 +201,60 @@ async function loadBillingSummary(guildId, options = {}) {
   return buildBillingSummary(billing, { now: options.now });
 }
 
+async function startTrialOnce(guildId, options = {}) {
+  const normalizedGuildId = normalizeGuildId(guildId);
+  const client = options.client || getDefaultPrisma();
+  const existing = await client.guildBilling.findUnique({
+    where: { guildId: normalizedGuildId },
+  });
+  if (existing) return existing;
+
+  const trialStartedAt = normalizeNow(options.now ?? new Date());
+  const trialEndsAt = new Date(
+    trialStartedAt.getTime() + STANDARD_TRIAL_DURATION_MS
+  );
+  const actorUserId = String(options.actorUserId || SYSTEM_BILLING_ACTOR).trim()
+    || SYSTEM_BILLING_ACTOR;
+
+  try {
+    return await client.$transaction(async (transaction) => {
+      const billing = await transaction.guildBilling.create({
+        data: {
+          guildId: normalizedGuildId,
+          trialStartedAt,
+          trialEndsAt,
+        },
+      });
+
+      await transaction.billingEvent.create({
+        data: {
+          guildId: normalizedGuildId,
+          actorUserId,
+          action: BILLING_EVENT_ACTIONS.TRIAL_STARTED,
+          metadata: {
+            source: "pixy_setup",
+            trialStartedAt: trialStartedAt.toISOString(),
+            trialEndsAt: trialEndsAt.toISOString(),
+          },
+        },
+      });
+
+      return billing;
+    });
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) throw error;
+
+    const concurrentBilling = await client.guildBilling.findUnique({
+      where: { guildId: normalizedGuildId },
+    });
+    if (concurrentBilling) return concurrentBilling;
+    throw error;
+  }
+}
+
 module.exports = {
   PLAN_LABELS,
+  SYSTEM_BILLING_ACTOR,
   buildBillingSummary,
   calculateRemainingTime,
   formatRemainingLabel,
@@ -199,10 +262,12 @@ module.exports = {
   getPlanWindow,
   hasPremiumEntitlement,
   isActiveUntil,
+  isUniqueConstraintError,
   loadBillingState,
   loadBillingSummary,
   normalizeGuildId,
   resolveEffectivePlan,
   resolveFallbackPlan,
+  startTrialOnce,
   toDateOrNull,
 };
