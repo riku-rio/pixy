@@ -19,6 +19,9 @@ function createFakeBillingClient(initialBilling = null, options = {}) {
   let billing = cloneValue(initialBilling);
   let events = cloneValue(options.events || []);
   let eventSequence = events.length;
+  let transactionQueue = Promise.resolve();
+  const locks = [];
+  const transactionOptions = [];
 
   const makeGuildBillingApi = (stage) => ({
     async findUnique({ where }) {
@@ -62,10 +65,13 @@ function createFakeBillingClient(initialBilling = null, options = {}) {
     },
   });
 
-  return {
+  const client = {
     guildBilling: {
       async findUnique({ where }) {
         return billing?.guildId === where.guildId ? cloneValue(billing) : null;
+      },
+      async findMany() {
+        return cloneValue(options.partnerRows || []);
       },
     },
     billingEvent: {
@@ -77,38 +83,62 @@ function createFakeBillingClient(initialBilling = null, options = {}) {
         );
       },
     },
-    async $transaction(callback) {
-      const stage = {
-        billing: cloneValue(billing),
-        events: cloneValue(events),
+    async $transaction(callback, txOptions) {
+      transactionOptions.push(cloneValue(txOptions || null));
+      const run = async () => {
+        const stage = {
+          billing: cloneValue(billing),
+          events: cloneValue(events),
+        };
+        const transaction = {
+          guildBilling: makeGuildBillingApi(stage),
+          billingEvent: makeBillingEventApi(stage),
+          async $queryRawUnsafe(query, guildId) {
+            locks.push({ query, guildId });
+            if (options.lockDelay) {
+              await new Promise((resolve) => setTimeout(resolve, options.lockDelay));
+            }
+            return [];
+          },
+        };
+        const result = await callback(transaction);
+        billing = stage.billing;
+        events = stage.events;
+        return result;
       };
-      const result = await callback({
-        guildBilling: makeGuildBillingApi(stage),
-        billingEvent: makeBillingEventApi(stage),
-      });
-      billing = stage.billing;
-      events = stage.events;
-      return result;
+      const pending = transactionQueue.then(run, run);
+      transactionQueue = pending.catch(() => null);
+      return pending;
     },
     snapshot() {
-      return { billing: cloneValue(billing), events: cloneValue(events) };
+      return {
+        billing: cloneValue(billing),
+        events: cloneValue(events),
+        locks: cloneValue(locks),
+        transactionOptions: cloneValue(transactionOptions),
+      };
     },
   };
+
+  return client;
 }
 
 function makeGuild(id = GUILD_ID, name = "Pixy Test Guild") {
   return { id, name };
 }
 
-function makeDiscordClient(guild, { fetchError = false } = {}) {
+function makeDiscordClient(guild, { fetchError = false, extraGuilds = [] } = {}) {
+  const guilds = [guild, ...extraGuilds].filter(Boolean);
   return {
     appEnv: { prefix: "^", owners: new Set([OWNER_ID]) },
     user: { id: "999999999999999999" },
     guilds: {
-      cache: new Map(guild ? [[guild.id, guild]] : []),
+      cache: new Map(guilds.map((entry) => [entry.id, entry])),
       async fetch(id) {
-        if (fetchError || !guild || guild.id !== id) throw new Error("missing");
-        return guild;
+        if (fetchError) throw new Error("missing");
+        const found = guilds.find((entry) => entry.id === id);
+        if (!found) throw new Error("missing");
+        return found;
       },
     },
     prefixCommands: new Map(),
@@ -117,7 +147,7 @@ function makeDiscordClient(guild, { fetchError = false } = {}) {
   };
 }
 
-function makeMessage({ guild = makeGuild(), authorId = OWNER_ID } = {}) {
+function makeMessage({ guild = makeGuild(), authorId = OWNER_ID, extraGuilds = [] } = {}) {
   const replies = [];
   const dms = [];
   const message = {
@@ -130,7 +160,7 @@ function makeMessage({ guild = makeGuild(), authorId = OWNER_ID } = {}) {
     },
     webhookId: null,
     content: "",
-    client: makeDiscordClient(guild),
+    client: makeDiscordClient(guild, { extraGuilds }),
     guild: null,
     member: null,
     async reply(payload) {
