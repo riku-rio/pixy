@@ -244,8 +244,20 @@ const messageCreateEvent = {
 
       const parsed = parseAiOutput(aiResult.text);
       if (parsed.kind === "invalid_json") {
-        await logAiUsage({ message, config, aiResult, status: "invalid_action_json", error: parsed.error || aiResult.text });
-        await safeReply(message, t(lang, "invalidActionJson"));
+        const assistantBlocked = !entitlement.premiumEntitled;
+        await logAiUsage({
+          message,
+          config,
+          aiResult,
+          status: assistantBlocked
+            ? SUBSCRIPTION_BLOCKED_AGENT_OUTPUT_STATUS
+            : "invalid_action_json",
+          error: parsed.error || aiResult.text,
+        });
+        await safeReply(
+          message,
+          t(lang, assistantBlocked ? "assistantActionBlocked" : "invalidActionJson")
+        );
         return;
       }
 
