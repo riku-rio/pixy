@@ -8,6 +8,9 @@ const {
   ChannelType,
 } = require("discord.js");
 const { startTrialOnce } = require("../billing/billingService");
+const {
+  refreshOpenTicketControlsAfterBillingMutation,
+} = require("../billing/ticketControlRefresh");
 const { prisma } = require("../config/prisma");
 
 const EPHEMERAL = 64;
@@ -70,8 +73,23 @@ async function saveCategory(guildId, categoryId, options = {}) {
 async function saveCategoryAndStartTrial(guildId, categoryId, options = {}) {
   const client = options.client || prisma;
   const startTrial = options.startTrial || startTrialOnce;
+  const refreshControls =
+    options.refreshControls || refreshOpenTicketControlsAfterBillingMutation;
   const config = await saveCategory(guildId, categoryId, { client });
+
   await startTrial(guildId, { client });
+
+  if (options.guild || options.discordClient) {
+    await refreshControls(guildId, {
+      client,
+      guild: options.guild,
+      discordClient: options.discordClient,
+      logger: options.logger,
+    }).catch((error) => {
+      console.error("Failed to refresh ticket controls after setup billing initialization:", error);
+    });
+  }
+
   return config;
 }
 
@@ -127,7 +145,14 @@ const command = {
           await interaction.editReply({ content: "I need Manage Channels permission to create the ticket category automatically.", components: [] });
           return;
         }
-        await completeAutomaticCategorySetup(interaction.guild.id, category.id);
+        await completeAutomaticCategorySetup(
+          interaction.guild.id,
+          category.id,
+          {
+            guild: interaction.guild,
+            discordClient: interaction.client,
+          }
+        );
         await interaction.editReply({ content: `Ticket category saved as **${category.name}**. Configure the Groq key and features with /pixy-settings.`, components: [] });
       },
     },
@@ -147,7 +172,14 @@ const command = {
           await interaction.editReply({ content: "Invalid category selected.", components: [] });
           return;
         }
-        await completeExistingCategorySetup(interaction.guild.id, category.id);
+        await completeExistingCategorySetup(
+          interaction.guild.id,
+          category.id,
+          {
+            guild: interaction.guild,
+            discordClient: interaction.client,
+          }
+        );
         await interaction.editReply({ content: `Ticket category saved as **${category.name}**. Configure the Groq key and features with /pixy-settings.`, components: [] });
       },
     },
