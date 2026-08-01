@@ -124,65 +124,65 @@
 
 ### Prompt construction
 
-- [ ] Resolve billing entitlement before building ticket context and prompt.
-- [ ] Keep recent ticket conversation available in Expired mode.
-- [ ] Exclude learned Q&A from Expired AI context.
-- [ ] Exclude learned free-form knowledge from Expired AI context.
-- [ ] Create or parameterize a non-agent assistant prompt.
-- [ ] Remove action capability descriptions from Expired prompts.
-- [ ] Remove close, rename, and escalation JSON schemas from Expired prompts.
-- [ ] Explicitly instruct Expired mode to return text only.
-- [ ] Keep existing premium prompt behavior for Trial, Pro, and Partner.
+- [x] Resolve billing entitlement before building ticket context and prompt.
+- [x] Keep recent ticket conversation available in Expired mode.
+- [x] Exclude learned Q&A from Expired AI context.
+- [x] Exclude learned free-form knowledge from Expired AI context.
+- [x] Create or parameterize a non-agent assistant prompt.
+- [x] Remove action capability descriptions from Expired prompts.
+- [x] Remove close, rename, and escalation JSON schemas from Expired prompts.
+- [x] Explicitly instruct Expired mode to return text only.
+- [x] Keep existing premium prompt behavior for Trial, Pro, and Partner.
 
 ### Runtime safety
 
-- [ ] Continue parsing AI output defensively.
-- [ ] Reject any action JSON returned in Expired mode.
-- [ ] Return a normal helpful failure response without executing an action.
-- [ ] Add AI usage statuses for subscription-blocked agent output.
-- [ ] Add tests verifying learned data and action instructions are absent in Expired mode.
+- [x] Continue parsing AI output defensively.
+- [x] Reject any action JSON returned in Expired mode.
+- [x] Return a normal helpful failure response without executing an action.
+- [x] Add AI usage statuses for subscription-blocked agent output.
+- [x] Add tests verifying learned data and action instructions are absent in Expired mode.
 
 ## Phase 6 — Ticket control rendering
 
 ### Entitlement-aware controls
 
-- [ ] Make ticket control rendering aware of effective plan.
-- [ ] Render Escalate, Rename, Close, and AI On/Off for Trial.
-- [ ] Render Escalate, Rename, Close, and AI On/Off for Pro.
-- [ ] Render Escalate, Rename, Close, and AI On/Off for Partner.
-- [ ] Render only AI On/Off for Expired.
-- [ ] Preserve the existing reset-menu behavior only where appropriate.
-- [ ] Ensure Expired does not display premium options as disabled choices.
+- [x] Make ticket control rendering aware of effective plan.
+- [x] Render Escalate, Rename, Close, and AI On/Off for Trial.
+- [x] Render Escalate, Rename, Close, and AI On/Off for Pro.
+- [x] Render Escalate, Rename, Close, and AI On/Off for Partner.
+- [x] Render only AI On/Off for Expired.
+- [x] Preserve the existing reset-menu behavior only where appropriate.
+- [x] Ensure Expired does not display premium options as disabled choices.
 
 ### Existing tickets
 
-- [ ] Render controls from current entitlement when a new ticket is tracked.
-- [ ] Add a reusable best-effort open-ticket control refresh routine.
-- [ ] Refresh controls after owner activation, renewal, custom extension, deactivation, Partner add, and Partner remove.
-- [ ] Refresh stale controls when a blocked interaction occurs.
-- [ ] Optionally refresh controls on the next ticket message after entitlement changes.
-- [ ] Ensure refresh failures are logged and do not roll back billing changes.
-- [ ] Add tests for premium and Expired component payloads.
+- [x] Render controls from current entitlement when a new ticket is tracked.
+- [x] Add a reusable best-effort open-ticket control refresh routine.
+- [x] Refresh controls after owner activation, renewal, custom extension, deactivation, Partner add, and Partner remove.
+- [x] Refresh stale controls when a blocked interaction occurs.
+- [x] Optionally refresh controls on the next ticket message after entitlement changes.
+- [x] Ensure refresh failures are logged and do not roll back billing changes.
+- [x] Add tests for premium and Expired component payloads.
 
 ## Phase 7 — Learned knowledge subscription behavior
 
 ### Slash command gates
 
-- [ ] Resolve effective plan at `/pixy-learn` execution time.
-- [ ] Allow `add-qna` only for Trial, Pro, and Partner.
-- [ ] Allow `add-freeform` only for Trial, Pro, and Partner.
-- [ ] Keep `list` available for Expired.
-- [ ] Keep `delete` available for Expired.
-- [ ] Keep `clear` available for Expired.
-- [ ] Direct expired administrators to `/pixy-billing` when an add action is blocked.
+- [x] Resolve effective plan at `/pixy-learn` execution time.
+- [x] Allow `add-qna` only for Trial, Pro, and Partner.
+- [x] Allow `add-freeform` only for Trial, Pro, and Partner.
+- [x] Keep `list` available for Expired.
+- [x] Keep `delete` available for Expired.
+- [x] Keep `clear` available for Expired.
+- [x] Direct expired administrators to `/pixy-billing` when an add action is blocked.
 
 ### Component and modal gates
 
-- [ ] Recheck entitlement when the Q&A modal is submitted.
-- [ ] Recheck entitlement when the free-form modal is submitted.
-- [ ] Ensure a modal opened before expiration cannot write after expiration.
-- [ ] Keep delete and clear component flows working for Expired.
-- [ ] Add tests for all Learn action states.
+- [x] Recheck entitlement when the Q&A modal is submitted.
+- [x] Recheck entitlement when the free-form modal is submitted.
+- [x] Ensure a modal opened before expiration cannot write after expiration.
+- [x] Keep delete and clear component flows working for Expired.
+- [x] Add tests for all Learn action states.
 
 ## Phase 8 — `/pixy-billing`
 
