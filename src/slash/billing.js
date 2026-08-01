@@ -308,6 +308,36 @@ async function handlePaymentSelection(interaction) {
   });
 }
 
+async function executeBillingCommand(interaction, options = {}) {
+  if (!interaction.guild) {
+    await interaction.reply({
+      content: "This command can only be used inside a server.",
+      flags: EPHEMERAL,
+    });
+    return;
+  }
+
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    await interaction.reply({
+      content: "You need Administrator permission to view Pixy billing.",
+      flags: EPHEMERAL,
+    });
+    return;
+  }
+
+  const loadSummary = options.loadSummary || loadBillingSummary;
+  const summary = await loadSummary(interaction.guild.id, options);
+  await interaction.reply({
+    ...buildBillingPanelPayload({
+      summary,
+      guildName: interaction.guild.name,
+      guildId: interaction.guild.id,
+      userId: interaction.user.id,
+    }),
+    flags: EPHEMERAL,
+  });
+}
+
 const command = {
   data: new SlashCommandBuilder()
     .setName("billing")
@@ -317,34 +347,7 @@ const command = {
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
 
-  async execute(interaction) {
-    if (!interaction.guild) {
-      await interaction.reply({
-        content: "This command can only be used inside a server.",
-        flags: EPHEMERAL,
-      });
-      return;
-    }
-
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-      await interaction.reply({
-        content: "You need Administrator permission to view Pixy billing.",
-        flags: EPHEMERAL,
-      });
-      return;
-    }
-
-    const summary = await loadBillingSummary(interaction.guild.id);
-    await interaction.reply({
-      ...buildBillingPanelPayload({
-        summary,
-        guildName: interaction.guild.name,
-        guildId: interaction.guild.id,
-        userId: interaction.user.id,
-      }),
-      flags: EPHEMERAL,
-    });
-  },
+  execute: executeBillingCommand,
 
   selectMenuHandlers: [
     {
@@ -366,6 +369,7 @@ module.exports = Object.assign(command, {
   buildPaymentComponents,
   buildPaymentInstructions,
   buildTimelineValue,
+  executeBillingCommand,
   formatDiscordDate,
   getPaymentVerb,
   getRenewalWarning,
