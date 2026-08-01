@@ -1,9 +1,14 @@
 const {
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   PermissionFlagsBits,
 } = require("discord.js");
 
 const { prisma } = require("../config/prisma");
+const {
+  hasGuildPremiumEntitlement,
+} = require("../billing/entitlementService");
 const ticketControls = require("./ticketControls");
 
 const EPHEMERAL = 64;
@@ -11,12 +16,16 @@ const ACTION_SELECT_ID = "ticket_control_action";
 const AI_ON_VALUE = "ai_on";
 const AI_OFF_VALUE = "ai_off";
 
-function buildTicketControlContent(aiEnabled = true) {
+function buildTicketControlContent(aiEnabled = true, options = {}) {
+  const premiumEntitled = options.premiumEntitled !== false;
+
   return [
     "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket.",
     "",
-    "**Ticket Actions**",
-    "Use the menu below if you want to escalate, rename, close, pause, or resume Pixy AI.",
+    premiumEntitled ? "**Ticket Actions**" : "**Pixy AI Control**",
+    premiumEntitled
+      ? "Use the menu below if you want to escalate, rename, close, pause, or resume Pixy AI."
+      : "Pixy Pro ticket actions are unavailable, but server staff can still pause or resume automatic AI replies.",
     "",
     aiEnabled
       ? "🤖 **Pixy AI is ON** — staff can pause or resume automatic replies at any time."
@@ -36,7 +45,20 @@ function buildTicketAiOption(aiEnabled = true) {
     .setEmoji(aiEnabled ? "⏸️" : "▶️");
 }
 
-function buildCombinedTicketControlComponents(aiEnabled = true) {
+function buildAiOnlyTicketControlComponents(aiEnabled = true) {
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId(ACTION_SELECT_ID)
+    .setPlaceholder("Select a Pixy AI action...")
+    .addOptions(buildTicketAiOption(aiEnabled));
+
+  return [new ActionRowBuilder().addComponents(selectMenu)];
+}
+
+function buildCombinedTicketControlComponents(aiEnabled = true, options = {}) {
+  if (options.premiumEntitled === false) {
+    return buildAiOnlyTicketControlComponents(aiEnabled);
+  }
+
   const rows = ticketControls.buildTicketControlPanelComponents();
   const selectMenu = rows?.[0]?.components?.[0];
   const aiOption = buildTicketAiOption(aiEnabled);
@@ -164,13 +186,13 @@ async function findTicketControlMessage(channel) {
   return null;
 }
 
-async function refreshTicketControlMessage(channel, aiEnabled) {
+async function refreshTicketControlMessage(channel, aiEnabled, options = {}) {
   const controlMessage = await findTicketControlMessage(channel);
   if (!controlMessage) return { ok: false, code: "control_message_not_found" };
 
   await controlMessage.edit({
-    content: buildTicketControlContent(aiEnabled),
-    components: buildCombinedTicketControlComponents(aiEnabled),
+    content: buildTicketControlContent(aiEnabled, options),
+    components: buildCombinedTicketControlComponents(aiEnabled, options),
     allowedMentions: { parse: [] },
   });
 
@@ -223,9 +245,17 @@ function installTicketAiSelectHandler() {
       return;
     }
 
+    const premiumEntitled = await hasGuildPremiumEntitlement(
+      interaction.guild.id
+    );
+    const renderOptions = { premiumEntitled };
+
     await interaction.update({
-      content: buildTicketControlContent(result.enabled),
-      components: buildCombinedTicketControlComponents(result.enabled),
+      content: buildTicketControlContent(result.enabled, renderOptions),
+      components: buildCombinedTicketControlComponents(
+        result.enabled,
+        renderOptions
+      ),
       allowedMentions: { parse: [] },
     });
 
@@ -245,6 +275,7 @@ module.exports = {
   ACTION_SELECT_ID,
   AI_ON_VALUE,
   AI_OFF_VALUE,
+  buildAiOnlyTicketControlComponents,
   buildTicketControlContent,
   buildCombinedTicketControlComponents,
   buildTicketAiStateMessage,
