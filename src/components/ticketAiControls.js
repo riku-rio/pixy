@@ -5,10 +5,12 @@ const {
   PermissionFlagsBits,
 } = require("discord.js");
 
-const { prisma } = require("../config/prisma");
+const { BILLING_PLANS } = require("../billing/constants");
+const { hasPremiumEntitlement } = require("../billing/billingService");
 const {
-  hasGuildPremiumEntitlement,
+  loadGuildEntitlementState,
 } = require("../billing/entitlementService");
+const { prisma } = require("../config/prisma");
 const ticketControls = require("./ticketControls");
 
 const EPHEMERAL = 64;
@@ -16,8 +18,27 @@ const ACTION_SELECT_ID = "ticket_control_action";
 const AI_ON_VALUE = "ai_on";
 const AI_OFF_VALUE = "ai_off";
 
+function resolveTicketControlRenderState(options = {}) {
+  let plan = options.plan || null;
+
+  if (!plan && options.premiumEntitled === false) {
+    plan = BILLING_PLANS.EXPIRED;
+  } else if (!plan && options.premiumEntitled === true) {
+    plan = BILLING_PLANS.TRIAL;
+  }
+
+  const premiumEntitled = plan
+    ? hasPremiumEntitlement(plan)
+    : options.premiumEntitled !== false;
+
+  return {
+    plan: plan || (premiumEntitled ? BILLING_PLANS.TRIAL : BILLING_PLANS.EXPIRED),
+    premiumEntitled,
+  };
+}
+
 function buildTicketControlContent(aiEnabled = true, options = {}) {
-  const premiumEntitled = options.premiumEntitled !== false;
+  const { premiumEntitled } = resolveTicketControlRenderState(options);
 
   return [
     "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket.",
@@ -55,7 +76,9 @@ function buildAiOnlyTicketControlComponents(aiEnabled = true) {
 }
 
 function buildCombinedTicketControlComponents(aiEnabled = true, options = {}) {
-  if (options.premiumEntitled === false) {
+  const { premiumEntitled } = resolveTicketControlRenderState(options);
+
+  if (!premiumEntitled) {
     return buildAiOnlyTicketControlComponents(aiEnabled);
   }
 
@@ -80,6 +103,14 @@ function buildCombinedTicketControlComponents(aiEnabled = true, options = {}) {
   }
 
   return rows;
+}
+
+function buildTicketControlPayload(aiEnabled = true, options = {}) {
+  return {
+    content: buildTicketControlContent(aiEnabled, options),
+    components: buildCombinedTicketControlComponents(aiEnabled, options),
+    allowedMentions: { parse: [] },
+  };
 }
 
 function buildTicketAiStateMessage({ enabled, previousEnabled, changed }) {
@@ -190,11 +221,7 @@ async function refreshTicketControlMessage(channel, aiEnabled, options = {}) {
   const controlMessage = await findTicketControlMessage(channel);
   if (!controlMessage) return { ok: false, code: "control_message_not_found" };
 
-  await controlMessage.edit({
-    content: buildTicketControlContent(aiEnabled, options),
-    components: buildCombinedTicketControlComponents(aiEnabled, options),
-    allowedMentions: { parse: [] },
-  });
+  await controlMessage.edit(buildTicketControlPayload(aiEnabled, options));
 
   return { ok: true, message: controlMessage };
 }
@@ -245,19 +272,11 @@ function installTicketAiSelectHandler() {
       return;
     }
 
-    const premiumEntitled = await hasGuildPremiumEntitlement(
-      interaction.guild.id
-    );
-    const renderOptions = { premiumEntitled };
+    const entitlement = await loadGuildEntitlementState(interaction.guild.id);
 
-    await interaction.update({
-      content: buildTicketControlContent(result.enabled, renderOptions),
-      components: buildCombinedTicketControlComponents(
-        result.enabled,
-        renderOptions
-      ),
-      allowedMentions: { parse: [] },
-    });
+    await interaction.update(
+      buildTicketControlPayload(result.enabled, { plan: entitlement.plan })
+    );
 
     await interaction.followUp({
       content: buildTicketAiStateMessage(result),
@@ -276,10 +295,15 @@ module.exports = {
   AI_ON_VALUE,
   AI_OFF_VALUE,
   buildAiOnlyTicketControlComponents,
+  buildTicketAiOption,
   buildTicketControlContent,
   buildCombinedTicketControlComponents,
+  buildTicketControlPayload,
   buildTicketAiStateMessage,
   canControlTicketAi,
-  setTicketAiState,
+  findTicketControlMessage,
+  isTicketControlMessage,
   refreshTicketControlMessage,
+  resolveTicketControlRenderState,
+  setTicketAiState,
 };
