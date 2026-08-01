@@ -8,7 +8,7 @@ const { parseAiOutput } = require("../../ai/parseAiAction");
 const {
   getGuildAgentActionAvailability,
   getSubscriptionRejectionMessage,
-  isSubscriptionRejectionCode,
+  getSubscriptionRejectionStatus,
 } = require("../../billing/entitlementService");
 const { splitDiscordMessage } = require("../../utils/splitDiscordMessage");
 const { validateTicketAction } = require("../../utils/tickets/actions/ticketActionValidator");
@@ -190,7 +190,9 @@ module.exports = {
             message,
             config,
             aiResult,
-            status: `action_rejected:${agentAvailability.code}`,
+            status:
+              getSubscriptionRejectionStatus(agentAvailability.code) ||
+              `action_rejected:${agentAvailability.code}`,
             error: agentAvailability.code,
           });
           await safeReply(
@@ -222,14 +224,14 @@ module.exports = {
             await prisma.ticketChannel.update({ where: { channelId }, data: { lastAiReplyAt: new Date() } });
           }
         } catch (error) {
-          const subscriptionRejected = isSubscriptionRejectionCode(error?.code);
+          const subscriptionStatus = getSubscriptionRejectionStatus(error?.code);
           await logAiUsage({
             message,
             config,
             aiResult,
-            status: subscriptionRejected
-              ? `action_rejected:${error.code}`
-              : `action_failed:${validation.action}`,
+            status:
+              subscriptionStatus ||
+              `action_failed:${validation.action}`,
             error: error?.message || error,
           });
           console.error("AI ticket action execution failed:", error);
