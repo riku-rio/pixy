@@ -304,10 +304,17 @@ const interactionCreateEvent = {
     if (interaction.isAutocomplete()) return handleAutocomplete(interaction);
 
     if (interaction.isChatInputCommand()) {
-      if (await stopUnavailableLearnInteraction(interaction)) return;
       const command = interaction.client.commands.get(interaction.commandName);
       if (!command) return safeReply(interaction, "Unknown command.");
-      await runInteraction(interaction, `Command ${interaction.commandName}`, command, () => command.execute(interaction));
+      await runInteraction(
+        interaction,
+        `Command ${interaction.commandName}`,
+        command,
+        async () => {
+          if (await stopUnavailableLearnInteraction(interaction)) return;
+          await command.execute(interaction);
+        }
+      );
       return;
     }
 
@@ -326,10 +333,18 @@ const interactionCreateEvent = {
     }
 
     if (interaction.isModalSubmit()) {
-      if (await stopUnavailableLearnInteraction(interaction)) return;
-      if (await stopUnavailableTicketAction(interaction)) return;
       const handler = findModalHandler(interaction);
-      if (handler) await runInteraction(interaction, `Modal ${interaction.customId}`, handler, () => handler.execute(interaction));
+      if (!handler) return;
+      await runInteraction(
+        interaction,
+        `Modal ${interaction.customId}`,
+        handler,
+        async () => {
+          if (await stopUnavailableLearnInteraction(interaction)) return;
+          if (await stopUnavailableTicketAction(interaction)) return;
+          await handler.execute(interaction);
+        }
+      );
     }
   },
 };
