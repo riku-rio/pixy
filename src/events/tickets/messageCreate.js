@@ -5,6 +5,11 @@ const { buildTicketContext } = require("../../ai/buildTicketContext");
 const { buildTicketPrompt } = require("../../ai/buildTicketPrompt");
 const { generateAiReply } = require("../../ai/aiClient");
 const { parseAiOutput } = require("../../ai/parseAiAction");
+const {
+  getGuildAgentActionAvailability,
+  getSubscriptionRejectionMessage,
+  getSubscriptionRejectionStatus,
+} = require("../../billing/entitlementService");
 const { splitDiscordMessage } = require("../../utils/splitDiscordMessage");
 const { validateTicketAction } = require("../../utils/tickets/actions/ticketActionValidator");
 const { executeTicketAction } = require("../../utils/tickets/actions/ticketActionExecutor");
@@ -178,6 +183,26 @@ module.exports = {
           await safeReply(message, t(lang, "actionFailed"));
           return;
         }
+
+        const agentAvailability = await getGuildAgentActionAvailability(guildId);
+        if (!agentAvailability.available) {
+          await logAiUsage({
+            message,
+            config,
+            aiResult,
+            status:
+              getSubscriptionRejectionStatus(agentAvailability.code) ||
+              `action_rejected:${agentAvailability.code}`,
+            error: agentAvailability.code,
+          });
+          await safeReply(
+            message,
+            getSubscriptionRejectionMessage(agentAvailability.code) ||
+              t(lang, "actionFailed")
+          );
+          return;
+        }
+
         if (parsed.action === TICKET_ACTIONS.CLOSE_TICKET && !hasExplicitCloseIntent(userMessage)) {
           await logAiUsage({ message, config, aiResult, status: "action_rejected:close_not_explicit", error: "Current message did not explicitly request closing the ticket." });
           await safeReply(message, t(lang, "actionFailed"));
@@ -199,9 +224,22 @@ module.exports = {
             await prisma.ticketChannel.update({ where: { channelId }, data: { lastAiReplyAt: new Date() } });
           }
         } catch (error) {
-          await logAiUsage({ message, config, aiResult, status: `action_failed:${validation.action}`, error: error?.message || error });
+          const subscriptionStatus = getSubscriptionRejectionStatus(error?.code);
+          await logAiUsage({
+            message,
+            config,
+            aiResult,
+            status:
+              subscriptionStatus ||
+              `action_failed:${validation.action}`,
+            error: error?.message || error,
+          });
           console.error("AI ticket action execution failed:", error);
-          await safeReply(message, t(lang, "actionFailed"));
+          await safeReply(
+            message,
+            getSubscriptionRejectionMessage(error?.code) ||
+              t(lang, "actionFailed")
+          );
         }
         return;
       }

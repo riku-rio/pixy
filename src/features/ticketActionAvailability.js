@@ -1,6 +1,10 @@
 const { PermissionFlagsBits } = require("discord.js");
 const { prisma } = require("../config/prisma");
-const { getDisabledActionCode } = require("./guildFeatureRules");
+const {
+  SUBSCRIPTION_REJECTION_MESSAGES,
+  getGuildTicketActionAvailability,
+  isSubscriptionRejectionCode,
+} = require("../billing/entitlementService");
 const { TICKET_ACTIONS } = require("../utils/tickets/actions/ticketActionTypes");
 
 const ACTION_SELECT_ID = "ticket_control_action";
@@ -18,6 +22,7 @@ const ACTION_PREFIXES = Object.freeze({
 });
 
 const DISABLED_MESSAGES = Object.freeze({
+  ...SUBSCRIPTION_REJECTION_MESSAGES,
   agent_actions_disabled:
     "That ticket action isn't available right now. Please continue describing what you need here, and the support team can help.",
   close_ticket_disabled:
@@ -46,10 +51,11 @@ function getTicketControlAction(interaction) {
   return null;
 }
 
-async function hasConfiguredSupportRoute(guild) {
+async function hasConfiguredSupportRoute(guild, options = {}) {
+  const client = options.client || prisma;
   await guild.roles.fetch().catch(() => null);
 
-  const routes = await prisma.adminRoute.findMany({
+  const routes = await client.adminRoute.findMany({
     where: { guildId: guild.id, enabled: true },
     select: { roleId: true },
     take: 25,
@@ -69,39 +75,67 @@ function getNoRoutesMessage(interaction) {
   return `${userMessage}\n\nAdministrator note: add at least one support route with \`/pixy-admins action:add\` to enable this option.`;
 }
 
-async function getTicketActionAvailability(interaction) {
+async function getTicketActionAvailability(interaction, options = {}) {
   const action = getTicketControlAction(interaction);
   if (!action || !interaction.guild || !interaction.channel) return null;
 
-  const ticket = await prisma.ticketChannel.findUnique({
+  const client = options.client || prisma;
+  const ticket = await client.ticketChannel.findUnique({
     where: { channelId: interaction.channel.id },
-    select: { closed: true },
+    select: { closed: true, aiEnabled: true },
   });
   if (!ticket || ticket.closed) return null;
 
-  const setting = await prisma.guildSetting.findUnique({
-    where: { guildId: interaction.guild.id },
-    select: {
-      agentActionsEnabled: true,
-      closeTicketEnabled: true,
-      renameReviewEnabled: true,
-      escalationEnabled: true,
-    },
-  });
+  const availability = await getGuildTicketActionAvailability(
+    interaction.guild.id,
+    action,
+    {
+      client,
+      now: options.now,
+    }
+  );
 
-  const rejectionCode = getDisabledActionCode(setting, action);
-  if (rejectionCode) {
-    return { available: false, code: rejectionCode, message: DISABLED_MESSAGES[rejectionCode] };
+  if (!availability.available) {
+    return {
+      available: false,
+      action,
+      code: availability.code,
+      message:
+        DISABLED_MESSAGES[availability.code] ||
+        "That ticket action isn't available right now.",
+      refreshControls: isSubscriptionRejectionCode(availability.code),
+      aiEnabled: ticket.aiEnabled !== false,
+    };
   }
 
-  if (action === TICKET_ACTIONS.ESCALATE_TICKET && !(await hasConfiguredSupportRoute(interaction.guild))) {
-    return { available: false, code: "no_support_routes", message: getNoRoutesMessage(interaction) };
+  if (
+    action === TICKET_ACTIONS.ESCALATE_TICKET &&
+    !(await hasConfiguredSupportRoute(interaction.guild, { client }))
+  ) {
+    return {
+      available: false,
+      action,
+      code: "no_support_routes",
+      message: getNoRoutesMessage(interaction),
+      refreshControls: false,
+      aiEnabled: ticket.aiEnabled !== false,
+    };
   }
 
-  return { available: true, action };
+  return {
+    available: true,
+    action,
+    code: null,
+    refreshControls: false,
+    aiEnabled: ticket.aiEnabled !== false,
+  };
 }
 
 module.exports = {
+  ACTION_PREFIXES,
+  ACTION_SELECT_ID,
   DISABLED_MESSAGES,
   getTicketActionAvailability,
+  getTicketControlAction,
+  hasConfiguredSupportRoute,
 };

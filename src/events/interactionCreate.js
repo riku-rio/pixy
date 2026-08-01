@@ -48,9 +48,25 @@ async function safeReply(interaction, payload) {
   }
 }
 
-async function stopUnavailableTicketAction(interaction) {
+async function refreshExpiredTicketControls(interaction, aiEnabled) {
+  if (!interaction.channel) return { ok: false, code: "missing_channel" };
+
+  const {
+    refreshTicketControlMessage,
+  } = require("../components/ticketAiControls");
+
+  return refreshTicketControlMessage(
+    interaction.channel,
+    aiEnabled,
+    { premiumEntitled: false }
+  );
+}
+
+async function stopUnavailableTicketAction(interaction, options = {}) {
   try {
-    const availability = await getTicketActionAvailability(interaction);
+    const getAvailability =
+      options.getAvailability || getTicketActionAvailability;
+    const availability = await getAvailability(interaction, options);
     if (!availability || availability.available) return false;
 
     if (availability.code === "no_support_routes") {
@@ -62,6 +78,18 @@ async function stopUnavailableTicketAction(interaction) {
     }
 
     await safeReply(interaction, availability.message);
+
+    if (availability.refreshControls) {
+      const refreshControlMessage =
+        options.refreshControlMessage || refreshExpiredTicketControls;
+      await refreshControlMessage(
+        interaction,
+        availability.aiEnabled
+      ).catch((error) => {
+        console.error("Failed to refresh expired ticket controls:", error);
+      });
+    }
+
     return true;
   } catch (error) {
     console.error("Ticket action availability preflight failed:", error);
@@ -247,7 +275,7 @@ async function handleAutocomplete(interaction) {
   }
 }
 
-module.exports = {
+const interactionCreateEvent = {
   name: Events.InteractionCreate,
 
   async execute(interaction) {
@@ -281,3 +309,10 @@ module.exports = {
     }
   },
 };
+
+module.exports = Object.assign(interactionCreateEvent, {
+  getInteractionErrorMessage,
+  refreshExpiredTicketControls,
+  safeReply,
+  stopUnavailableTicketAction,
+});

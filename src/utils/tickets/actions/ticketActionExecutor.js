@@ -163,10 +163,18 @@ async function executeCloseTicket({ actionRequest, message }) {
   }
 }
 
-async function executeTicketAction({ actionRequest, validation, message }) {
-  const rejectionCode = await getGuildActionRejection(message.guild?.id, validation.action);
+async function executeTicketAction({
+  actionRequest,
+  validation,
+  message,
+  getActionRejection = getGuildActionRejection,
+}) {
+  const rejectionCode = await getActionRejection(
+    message.guild?.id,
+    validation.action
+  );
   if (rejectionCode) {
-    const error = new Error(`Ticket action is disabled for this server: ${rejectionCode}`);
+    const error = new Error(`Ticket action is unavailable: ${rejectionCode}`);
     error.code = rejectionCode;
     throw error;
   }
