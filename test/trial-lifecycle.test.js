@@ -149,37 +149,34 @@ test("automatic-category setup saves the category before starting the trial", as
 
 test("repeated setup does not extend the original trial", async () => {
   const billingClient = createBillingClient();
-  const setupClient = {
-    ...billingClient,
-    guildConfig: {
-      async upsert({ where, create }) {
-        return {
-          guildId: where.guildId,
-          ticketCategoryId: create.ticketCategoryId,
-        };
-      },
+  billingClient.guildConfig = {
+    async upsert({ where, create }) {
+      return {
+        guildId: where.guildId,
+        ticketCategoryId: create.ticketCategoryId,
+      };
     },
   };
 
   await completeExistingCategorySetup("123", "category-1", {
-    client: setupClient,
+    client: billingClient,
     startTrial: (guildId, options) => startTrialOnce(guildId, {
       ...options,
       now: NOW,
     }),
   });
-  const firstStartedAt = setupClient.billing.trialStartedAt.toISOString();
-  const firstEndsAt = setupClient.billing.trialEndsAt.toISOString();
+  const firstStartedAt = billingClient.billing.trialStartedAt.toISOString();
+  const firstEndsAt = billingClient.billing.trialEndsAt.toISOString();
 
   await completeAutomaticCategorySetup("123", "category-2", {
-    client: setupClient,
+    client: billingClient,
     startTrial: (guildId, options) => startTrialOnce(guildId, {
       ...options,
       now: new Date(NOW.getTime() + 3 * 24 * 60 * 60 * 1000),
     }),
   });
 
-  assert.equal(setupClient.billing.trialStartedAt.toISOString(), firstStartedAt);
-  assert.equal(setupClient.billing.trialEndsAt.toISOString(), firstEndsAt);
-  assert.equal(setupClient.events.length, 1);
+  assert.equal(billingClient.billing.trialStartedAt.toISOString(), firstStartedAt);
+  assert.equal(billingClient.billing.trialEndsAt.toISOString(), firstEndsAt);
+  assert.equal(billingClient.events.length, 1);
 });
