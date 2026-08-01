@@ -11,6 +11,7 @@ const OWNER_RESPONSE_TONES = Object.freeze({
   warning: "⚠️",
   info: "ℹ️",
 });
+const OWNER_MESSAGE_LIMIT = 1_950;
 
 class OwnerCommandInputError extends Error {
   constructor(code, message) {
@@ -52,6 +53,18 @@ async function resolveAccessibleGuild(discordClient, value) {
     "guild_unavailable",
     "Pixy cannot access that guild. Confirm the ID and make sure the bot is still in the server."
   );
+}
+
+async function resolveGuildName(discordClient, guildId) {
+  const cached = discordClient?.guilds?.cache?.get?.(guildId);
+  if (cached?.name) return cleanOwnerText(cached.name, 100);
+
+  if (typeof discordClient?.guilds?.fetch === "function") {
+    const fetched = await discordClient.guilds.fetch(guildId).catch(() => null);
+    if (fetched?.name) return cleanOwnerText(fetched.name, 100);
+  }
+
+  return null;
 }
 
 function parseDuration(value) {
@@ -107,6 +120,34 @@ function buildOwnerResponse({ title, tone = "info", lines = [] }) {
   };
 }
 
+function buildOwnerResponsePages({ title, tone = "info", lines = [] }) {
+  const normalizedLines = lines
+    .map((line) => String(line ?? "").trim().slice(0, 700))
+    .filter(Boolean);
+  const groups = [];
+  let current = [];
+
+  for (const line of normalizedLines) {
+    const candidate = buildOwnerResponse({ title, tone, lines: [...current, line] });
+    if (candidate.content.length > OWNER_MESSAGE_LIMIT && current.length > 0) {
+      groups.push(current);
+      current = [line];
+    } else {
+      current.push(line);
+    }
+  }
+
+  if (current.length > 0 || groups.length === 0) groups.push(current);
+
+  return groups.map((group, index) =>
+    buildOwnerResponse({
+      title: groups.length > 1 ? `${title} (${index + 1}/${groups.length})` : title,
+      tone,
+      lines: group,
+    })
+  );
+}
+
 function buildOwnerSuccess(title, lines) {
   return buildOwnerResponse({ title, tone: "success", lines });
 }
@@ -123,6 +164,14 @@ async function replyOwner(message, payload) {
   return message.reply(payload);
 }
 
+async function replyOwnerPages(message, payloads) {
+  const sent = [];
+  for (const payload of payloads) {
+    sent.push(await message.reply(payload));
+  }
+  return sent;
+}
+
 function formatOwnerDate(value) {
   if (!value) return "Not recorded";
   const date = value instanceof Date ? value : new Date(value);
@@ -136,17 +185,21 @@ function getOwnerCommandPrefix(message) {
 }
 
 module.exports = {
+  OWNER_MESSAGE_LIMIT,
   OWNER_RESPONSE_TONES,
   OwnerCommandInputError,
   buildOwnerError,
   buildOwnerInfo,
   buildOwnerResponse,
+  buildOwnerResponsePages,
   buildOwnerSuccess,
   cleanOwnerText,
   formatOwnerDate,
   getOwnerCommandPrefix,
   parseDuration,
   replyOwner,
+  replyOwnerPages,
   resolveAccessibleGuild,
+  resolveGuildName,
   validateGuildId,
 };

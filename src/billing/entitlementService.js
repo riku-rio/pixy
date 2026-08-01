@@ -18,9 +18,9 @@ const SUBSCRIPTION_REJECTION_CODES = Object.freeze({
 
 const SUBSCRIPTION_REJECTION_MESSAGES = Object.freeze({
   [SUBSCRIPTION_REJECTION_CODES.TRIAL_EXPIRED]:
-    "This server's seven-day Pixy Pro Trial has ended. Ask a server administrator to activate Pixy Pro to use this action.",
+    "This server's seven-day Pixy Pro Trial has ended. Ask a server administrator to use /pixy-billing to activate Pixy Pro for this action.",
   [SUBSCRIPTION_REJECTION_CODES.PRO_REQUIRED]:
-    "This action requires Pixy Pro. Ask a server administrator to activate Pixy Pro for this server.",
+    "This action requires Pixy Pro. Ask a server administrator to use /pixy-billing to view activation options.",
 });
 
 const ACTION_CAPABILITY_MAP = Object.freeze({

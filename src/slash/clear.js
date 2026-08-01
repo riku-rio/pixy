@@ -5,7 +5,9 @@ const {
   ButtonBuilder,
   ButtonStyle,
 } = require("discord.js");
-const { prisma } = require("../config/prisma");
+const {
+  deleteGuildOperationalData,
+} = require("../data/guildOperationalCleanup");
 
 const EPHEMERAL = 64;
 const CONFIRM_PREFIX = "clear_guild_confirm:";
@@ -19,32 +21,34 @@ async function assertOwnerAndAdmin(interaction, ownerUserId) {
   return true;
 }
 
-module.exports = {
+const command = {
   data: new SlashCommandBuilder()
     .setName("clear")
-    .setDescription("Delete all Pixy data stored for this server.")
+    .setDescription("Delete operational Pixy data stored for this server.")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   guildOnly: true,
   userPermissions: [PermissionFlagsBits.Administrator],
 
   async execute(interaction) {
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${CONFIRM_PREFIX}${interaction.user.id}`).setLabel("Delete server data").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`${CONFIRM_PREFIX}${interaction.user.id}`).setLabel("Delete operational data").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(`${CANCEL_PREFIX}${interaction.user.id}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
     );
     await interaction.reply({
       content: [
-        "This permanently deletes all Pixy data stored for this server, including:",
+        "This permanently deletes Pixy's operational data for this server, including:",
         "- Ticket and escalation configuration",
         "- Learned knowledge and ticket records",
         "- Channel blacklist entries",
         "- Admin routes and AI usage logs",
         "- Feature settings, model selection, and the encrypted Groq credential",
         "",
+        "Billing continuity records are retained: Trial, Pro, Partner dates, and billing audit events are not deleted. This prevents another Trial after reconfiguration.",
         "Discord channels and roles themselves are not deleted.",
       ].join("\n"),
       components: [row],
       flags: EPHEMERAL,
+      allowedMentions: { parse: [] },
     });
   },
 
@@ -55,26 +59,16 @@ module.exports = {
         const ownerUserId = interaction.customId.slice(CONFIRM_PREFIX.length);
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
         await interaction.deferUpdate();
-        const guildId = interaction.guild.id;
-        const results = await prisma.$transaction([
-          prisma.aiUsageLog.deleteMany({ where: { guildId } }),
-          prisma.ticketChannel.deleteMany({ where: { guildId } }),
-          prisma.learnedAnswer.deleteMany({ where: { guildId } }),
-          prisma.adminRoute.deleteMany({ where: { guildId } }),
-          prisma.guildIgnoredChannel.deleteMany({ where: { guildId } }),
-          prisma.guildBlockedTerm.deleteMany({ where: { guildId } }),
-          prisma.guildAllowedTerm.deleteMany({ where: { guildId } }),
-          prisma.guildSetting.deleteMany({ where: { guildId } }),
-          prisma.guildConfig.deleteMany({ where: { guildId } }),
-        ]);
-        const totalDeleted = results.reduce((sum, result) => sum + result.count, 0);
+        const result = await deleteGuildOperationalData(interaction.guild.id);
         await interaction.editReply({
           content: [
-            "Done. All Pixy database data for this server has been deleted.",
-            `Deleted records: **${totalDeleted}**`,
-            "The encrypted Groq credential was removed. Run /pixy-setup and /pixy-settings to configure the server again.",
+            "Done. Pixy's operational database data for this server has been deleted.",
+            `Deleted records: **${result.totalDeleted}**`,
+            "Trial, Pro, Partner, and billing audit records were retained for continuity and Trial-abuse prevention.",
+            "The encrypted Groq credential was removed. Run /pixy-setup and /pixy-settings to configure the server again; setup will not start another Trial.",
           ].join("\n"),
           components: [],
+          allowedMentions: { parse: [] },
         });
       },
     },
@@ -83,8 +77,19 @@ module.exports = {
       async execute(interaction) {
         const ownerUserId = interaction.customId.slice(CANCEL_PREFIX.length);
         if (!(await assertOwnerAndAdmin(interaction, ownerUserId))) return;
-        await interaction.update({ content: "Cancelled. No Pixy data was deleted.", components: [] });
+        await interaction.update({
+          content: "Cancelled. No Pixy data was deleted.",
+          components: [],
+          allowedMentions: { parse: [] },
+        });
       },
     },
   ],
 };
+
+module.exports = Object.assign(command, {
+  CANCEL_PREFIX,
+  CONFIRM_PREFIX,
+  EPHEMERAL,
+  assertOwnerAndAdmin,
+});
