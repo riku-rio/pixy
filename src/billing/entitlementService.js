@@ -56,6 +56,24 @@ function getSubscriptionRejectionStatus(code) {
     : null;
 }
 
+async function loadGuildEntitlementState(guildId, options = {}) {
+  const normalizedGuildId = normalizeGuildId(guildId);
+  const client = options.client || getDefaultPrisma();
+  const now = options.now ?? new Date();
+  const billing = Object.prototype.hasOwnProperty.call(options, "billing")
+    ? options.billing
+    : await loadBillingState(normalizedGuildId, { client });
+  const plan = resolveEffectivePlan(billing, now);
+
+  return {
+    guildId: normalizedGuildId,
+    billing,
+    plan,
+    premiumEntitled: hasPremiumEntitlement(plan),
+    capabilities: getPlanCapabilities(plan),
+  };
+}
+
 async function loadGuildFeatureSettings(guildId, options = {}) {
   const normalizedGuildId = normalizeGuildId(guildId);
   const client = options.client || getDefaultPrisma();
@@ -126,10 +144,8 @@ function resolveCapabilityAvailability({ billing, settings, capability, now }) {
 }
 
 async function hasGuildPremiumEntitlement(guildId, options = {}) {
-  const billing = await loadBillingState(guildId, options);
-  return hasPremiumEntitlement(
-    resolveEffectivePlan(billing, options.now ?? new Date())
-  );
+  const state = await loadGuildEntitlementState(guildId, options);
+  return state.premiumEntitled;
 }
 
 async function getGuildPremiumCapabilityAvailability(
@@ -141,13 +157,13 @@ async function getGuildPremiumCapabilityAvailability(
   const client = options.client || getDefaultPrisma();
   const now = options.now ?? new Date();
 
-  const [billing, settings] = await Promise.all([
-    loadBillingState(normalizedGuildId, { client }),
+  const [entitlement, settings] = await Promise.all([
+    loadGuildEntitlementState(normalizedGuildId, { client, now }),
     loadGuildFeatureSettings(normalizedGuildId, { client }),
   ]);
 
   return resolveCapabilityAvailability({
-    billing,
+    billing: entitlement.billing,
     settings,
     capability,
     now,
@@ -186,12 +202,24 @@ async function getGuildAgentActionAvailability(guildId, options = {}) {
   );
 }
 
+async function getGuildLearnedKnowledgeWriteAvailability(
+  guildId,
+  options = {}
+) {
+  return getGuildPremiumCapabilityAvailability(
+    guildId,
+    BILLING_CAPABILITIES.LEARNED_KNOWLEDGE_WRITE,
+    options
+  );
+}
+
 module.exports = {
   ACTION_CAPABILITY_MAP,
   SUBSCRIPTION_REJECTION_CODES,
   SUBSCRIPTION_REJECTION_MESSAGES,
   getFeatureRejectionForCapability,
   getGuildAgentActionAvailability,
+  getGuildLearnedKnowledgeWriteAvailability,
   getGuildPremiumCapabilityAvailability,
   getGuildTicketActionAvailability,
   getSubscriptionRejectionCode,
@@ -199,6 +227,7 @@ module.exports = {
   getSubscriptionRejectionStatus,
   hasGuildPremiumEntitlement,
   isSubscriptionRejectionCode,
+  loadGuildEntitlementState,
   loadGuildFeatureSettings,
   resolveCapabilityAvailability,
 };
