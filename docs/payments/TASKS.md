@@ -74,20 +74,20 @@
 
 ### Trial creation
 
-- [ ] Add an atomic `startTrialOnce(guildId)` billing operation.
-- [ ] Set Trial start to the current time.
-- [ ] Set Trial end to exactly seven days later.
-- [ ] Create a `trial_started` audit event in the same transaction.
-- [ ] Return the existing billing record without extending dates when one already exists.
+- [x] Add an atomic `startTrialOnce(guildId)` billing operation.
+- [x] Set Trial start to the current time.
+- [x] Set Trial end to exactly seven days later.
+- [x] Create a `trial_started` audit event in the same transaction.
+- [x] Return the existing billing record without extending dates when one already exists.
 
 ### Setup integration
 
-- [ ] Integrate Trial creation after successful existing-category setup.
-- [ ] Integrate Trial creation after successful automatic-category setup.
-- [ ] Do not start a Trial before the category save succeeds.
-- [ ] Do not fail a successful category update because a billing row already exists.
-- [ ] Add tests for both setup paths.
-- [ ] Add tests proving repeated `/pixy-setup` does not extend the Trial.
+- [x] Integrate Trial creation after successful existing-category setup.
+- [x] Integrate Trial creation after successful automatic-category setup.
+- [x] Do not start a Trial before the category save succeeds.
+- [x] Do not fail a successful category update because a billing row already exists.
+- [x] Add tests for both setup paths.
+- [x] Add tests proving repeated `/pixy-setup` does not extend the Trial.
 
 ## Phase 4 — Premium entitlement gates
 
