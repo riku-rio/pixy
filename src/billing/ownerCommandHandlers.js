@@ -381,13 +381,8 @@ function buildOwnerHelpPayload(message) {
 
 async function executeHelp(message) {
   const payload = buildOwnerHelpPayload(message);
-  try {
-    await message.author.send(payload);
-    return { delivered: "dm" };
-  } catch {
-    await message.reply(payload);
-    return { delivered: "channel" };
-  }
+  await message.reply(payload);
+  return { delivered: "channel" };
 }
 
 module.exports = {
