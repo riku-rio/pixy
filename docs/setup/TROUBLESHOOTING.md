@@ -1,8 +1,8 @@
-# Local setup troubleshooting
+# Pixy AI Tickets setup troubleshooting
 
-## Docker is not running
+## Docker is unavailable
 
-Check Docker before starting the database:
+Check Docker and Docker Compose:
 
 ```powershell
 docker version
@@ -15,9 +15,9 @@ On Windows, start Docker Desktop. On Ubuntu, run:
 sudo systemctl enable --now docker
 ```
 
-## The database port is already in use
+## Port 3306 is already in use
 
-Pixy AI Tickets binds MySQL to `127.0.0.1:3306`. Pixy System binds MySQL to `127.0.0.1:3308`.
+Pixy AI Tickets binds its bundled MySQL service to `127.0.0.1:3306`.
 
 Inspect active containers:
 
@@ -25,40 +25,35 @@ Inspect active containers:
 docker ps
 ```
 
-Stop the database belonging to the current repository when it is no longer needed:
+Stop the database from the Pixy AI Tickets directory when it is no longer needed:
 
 ```powershell
 npm run db:down
 ```
 
-Do not change only `DATABASE_URL`; any host-port change must also be reflected in `docker-compose.yml`.
+Do not change only `DATABASE_URL`. A host-port change must also be reflected in `docker-compose.yml`.
 
 ## Prisma cannot connect to MySQL
 
 Confirm that:
 
 - `npm run db:up` completed successfully.
-- The database container reports healthy in `docker ps`.
+- The MySQL container is healthy in `docker ps`.
 - The username, password, and database name in `.env` match `.env.docker`.
-- Pixy AI Tickets uses port `3306` and Pixy System uses port `3308`.
-- Special characters in a database password are URL-encoded inside `DATABASE_URL`.
+- `DATABASE_URL` uses host port `3306` for the bundled local database.
+- Special characters in the database password are URL-encoded in `DATABASE_URL`.
 
 Then retry in order:
 
 ```powershell
 npm run prisma:generate
 npm run prisma:migrate
-```
-
-For Pixy AI Tickets, follow migrations with:
-
-```powershell
 npm run prisma:seed
 ```
 
 ## Environment files already exist
 
-Avoid overwriting configured secrets. Create a template copy only when the destination does not exist:
+Avoid overwriting configured secrets. On Windows:
 
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
@@ -72,13 +67,13 @@ On Ubuntu:
 [ -f .env.docker ] || cp .env.docker.example .env.docker
 ```
 
-## Discord commands are not visible yet
+## Discord slash commands are not visible yet
 
-Pixy AI Tickets registers global slash commands. Discord can take time to propagate global command updates. Confirm that the bot is online, the application was invited with the required scopes, and `DISCORD_CLIENT_ID` belongs to the same application as `DISCORD_TOKEN`.
+Pixy AI Tickets registers global slash commands, which can take time to propagate. Confirm that the bot is online, the application was invited with the required scopes, and `DISCORD_CLIENT_ID` belongs to the same application as `DISCORD_TOKEN`.
 
 ## Stored Groq credentials cannot be decrypted
 
-Pixy AI Tickets requires the same stable `PIXY_CREDENTIAL_ENCRYPTION_KEY` across restarts and deployments. Restoring only the database without the matching key does not restore encrypted guild credentials. Replace affected guild credentials through Pixy settings after correcting the key configuration.
+Pixy AI Tickets requires the same stable `PIXY_CREDENTIAL_ENCRYPTION_KEY` across restarts and deployments. A database backup without the matching key cannot recover encrypted guild credentials. Restore the correct key or replace affected guild credentials through Pixy settings.
 
 ## Clean local restart
 
@@ -89,6 +84,8 @@ npm run db:down
 npm run db:up
 npm run prisma:generate
 npm run prisma:migrate
+npm run prisma:seed
+npm start
 ```
 
-Use `npm run db:clear -- --confirm` only when intentionally deleting all application rows. It is destructive and is not a general troubleshooting step.
+Use `npm run db:clear -- --confirm` only when intentionally deleting all application rows. It is destructive and is not a normal troubleshooting step.

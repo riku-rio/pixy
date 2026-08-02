@@ -1,10 +1,18 @@
-# Ubuntu quick start
+# Pixy AI Tickets: Ubuntu quick start
 
-This guide targets Ubuntu 22.04 or newer and uses Docker Engine with the Docker Compose plugin. Run each project in its own directory.
+This guide installs and runs **Pixy AI Tickets** on Ubuntu using Docker Engine and the Docker Compose plugin.
 
 ## Prerequisites
 
-Install Git, Node.js 20 or newer, Docker Engine, and the Docker Compose plugin. Confirm the tools are available:
+Use Ubuntu 22.04 or newer with:
+
+- Git
+- Node.js 20 or newer
+- Docker Engine
+- Docker Compose plugin
+- A Discord application and bot token for Pixy AI Tickets
+
+Confirm the tools are available:
 
 ```bash
 git --version
@@ -20,25 +28,27 @@ Start Docker and enable it at boot:
 sudo systemctl enable --now docker
 ```
 
-To run Docker without `sudo`, add your user to the Docker group, then sign out and back in:
+To use Docker without `sudo`, add the current user to the Docker group, then sign out and back in:
 
 ```bash
 sudo usermod -aG docker "$USER"
 ```
 
-## Pixy AI Tickets
+## Clone or update
 
-### Clone into the current empty directory
+Clone into the current empty directory:
 
 ```bash
 git clone https://github.com/riku-rio/pixy-ai-tickets .
 ```
 
-### Or update an existing clone
+Or update an existing clone:
 
 ```bash
 git pull origin main
 ```
+
+## Configure the environment
 
 Create the local environment files:
 
@@ -47,87 +57,41 @@ cp .env.example .env
 cp .env.docker.example .env.docker
 ```
 
-Fill `.env` and `.env.docker` with the real values. The database name, username, and password in `DATABASE_URL` must match `.env.docker`. The local MySQL service is published on `127.0.0.1:3306`.
+Fill both files with the real values. The database name, username, and password in `DATABASE_URL` must match `.env.docker`. The bundled local MySQL service is published on `127.0.0.1:3306`.
 
-Install dependencies and start the database:
+For local development, set `NODE_ENV=development`. Also configure the Discord token/client ID, billing-owner IDs, and a stable `PIXY_CREDENTIAL_ENCRYPTION_KEY`.
+
+## Install and prepare the database
 
 ```bash
 npm ci
 npm run db:up
-```
-
-Generate Prisma Client, apply migrations, and seed the database:
-
-```bash
 npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:seed
 ```
 
-Start the bot:
+Keep the Prisma commands in that order: generate, migrate, then seed.
+
+## Start Pixy AI Tickets
 
 ```bash
-node .
+npm start
 ```
 
-`npm start` is equivalent to `node .`.
+`node .` is equivalent.
 
-## Pixy System
+## Stop the local database
 
-### Clone into the current empty directory
-
-```bash
-git clone https://github.com/riku-rio/pixy-system .
-```
-
-### Or update an existing clone
-
-```bash
-git pull origin main
-```
-
-Create the local environment files:
-
-```bash
-cp .env.example .env
-cp .env.docker.example .env.docker
-```
-
-Fill `.env` and `.env.docker` with the real values. The database name, username, and password in `DATABASE_URL` must match `.env.docker`. Pixy System publishes MySQL on `127.0.0.1:3308`.
-
-Install dependencies and start the database:
-
-```bash
-npm ci
-npm run db:up
-```
-
-Generate Prisma Client and apply migrations:
-
-```bash
-npm run prisma:generate
-npm run prisma:migrate
-```
-
-Start the bot:
-
-```bash
-node .
-```
-
-Pixy System currently has no seed command.
-
-## Stop a local database
-
-Run this inside the relevant repository:
+Stop the bot first, then run:
 
 ```bash
 npm run db:down
 ```
 
-## Safe update sequence
+## Update an existing installation
 
-Stop the bot process, pull the latest changes, then run:
+Stop the bot, pull the latest changes, and prepare the updated application:
 
 ```bash
 git pull origin main
@@ -135,12 +99,8 @@ npm ci
 npm run db:up
 npm run prisma:generate
 npm run prisma:migrate
-```
-
-For Pixy AI Tickets, also run:
-
-```bash
 npm run prisma:seed
+npm start
 ```
 
-Then restart with `node .` or `npm start`.
+Never commit `.env`, `.env.docker`, Discord tokens, Groq credentials, database passwords, payment information, or encryption keys.

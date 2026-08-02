@@ -1,6 +1,6 @@
-# Pixy AI 🤖
+# Pixy AI Tickets 🤖
 
-Pixy AI is a public, multi-server Discord ticket assistant with guild-scoped knowledge, validated ticket actions, human escalation, interactive settings, encrypted per-server Groq credentials, and manually administered Trial, Pro, and Partner plans.
+Pixy AI Tickets is a public, multi-server Discord ticket assistant with guild-scoped knowledge, validated ticket actions, human escalation, interactive settings, encrypted per-server Groq credentials, and manually administered Trial, Pro, and Partner plans.
 
 ## MVP scope
 
@@ -150,6 +150,17 @@ The destructive development command `npm run db:clear -- --confirm` is different
 - Prisma ORM 7
 - MySQL 8.4 locally and in production
 - Groq SDK
+
+## Quick-start guides
+
+These guides are specific to **Pixy AI Tickets**:
+
+- [Windows quick start](docs/setup/WINDOWS.md) — PowerShell and Docker Desktop
+- [Ubuntu quick start](docs/setup/UBUNTU.md) — Docker Engine and Docker Compose
+- [Setup troubleshooting](docs/setup/TROUBLESHOOTING.md) — Docker, port 3306, Prisma, environment files, Discord commands, and credential recovery
+- [Setup guide index](docs/setup/README.md) — setup order and project-specific notes
+
+Pixy System is a separate Discord bot with its own setup documentation in the [`pixy-system`](https://github.com/riku-rio/pixy-system) repository.
 
 ## Environment variables
 

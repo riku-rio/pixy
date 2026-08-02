@@ -1,121 +1,83 @@
-# Windows quick start
+# Pixy AI Tickets: Windows quick start
 
-This guide uses PowerShell and Docker Desktop. Run the commands for each repository in a separate directory.
+This guide installs and runs **Pixy AI Tickets** on Windows using PowerShell and Docker Desktop.
 
 ## Prerequisites
 
 - Git
 - Node.js 20 or newer
 - Docker Desktop with Docker Compose enabled
-- A Discord application and bot token for each project
+- A Discord application and bot token for Pixy AI Tickets
 
-Make sure Docker Desktop is running before starting either database.
+Make sure Docker Desktop is running before starting MySQL.
 
-## Pixy AI Tickets
+## Clone or update
 
-### Clone into the current empty directory
+Clone into the current empty directory:
 
 ```powershell
 git clone https://github.com/riku-rio/pixy-ai-tickets .
 ```
 
-### Or update an existing clone
+Or update an existing clone:
 
 ```powershell
 git pull origin main
 ```
 
-Create the local environment files:
-
-```powershell
-Copy-Item .env.example .env ; Copy-Item .env.docker.example .env.docker
-```
-
-Fill `.env` and `.env.docker` with the real values. The database name, username, and password in `DATABASE_URL` must match the values in `.env.docker`. Pixy AI Tickets publishes its local MySQL service on `127.0.0.1:3306`.
-
-Install dependencies and start the database:
-
-```powershell
-npm ci ; npm run db:up
-```
-
-Generate Prisma Client, apply migrations, and seed the database in this order:
-
-```powershell
-npm run prisma:generate ; npm run prisma:migrate ; npm run prisma:seed
-```
-
-Start the bot locally:
-
-```powershell
-node .
-```
-
-`npm start` is equivalent to `node .`.
-
-## Pixy System
-
-### Clone into the current empty directory
-
-```powershell
-git clone https://github.com/riku-rio/pixy-system .
-```
-
-### Or update an existing clone
-
-```powershell
-git pull origin main
-```
+## Configure the environment
 
 Create the local environment files:
 
 ```powershell
-Copy-Item .env.example .env ; Copy-Item .env.docker.example .env.docker
+Copy-Item .env.example .env
+Copy-Item .env.docker.example .env.docker
 ```
 
-Fill `.env` and `.env.docker` with the real values. The database name, username, and password in `DATABASE_URL` must match the values in `.env.docker`. Pixy System publishes its local MySQL service on `127.0.0.1:3308`.
+Fill both files with the real values. The database name, username, and password in `DATABASE_URL` must match `.env.docker`. The bundled local MySQL service is published on `127.0.0.1:3306`.
 
-Install dependencies and start the database:
+For local development, set `NODE_ENV=development`. Also configure the Discord token/client ID, billing-owner IDs, and a stable `PIXY_CREDENTIAL_ENCRYPTION_KEY`.
+
+## Install and prepare the database
 
 ```powershell
-npm ci ; npm run db:up
+npm ci
+npm run db:up
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
 ```
 
-Generate Prisma Client and apply migrations:
+Keep the Prisma commands in that order: generate, migrate, then seed.
+
+## Start Pixy AI Tickets
 
 ```powershell
-npm run prisma:generate ; npm run prisma:migrate
+npm start
 ```
 
-Start the bot locally:
+`node .` is equivalent.
 
-```powershell
-node .
-```
+## Stop the local database
 
-Pixy System currently has no database seed step.
-
-## Stop a local database
-
-Run this inside the relevant repository:
+Stop the bot first, then run:
 
 ```powershell
 npm run db:down
 ```
 
-## Safe update sequence
+## Update an existing installation
 
-Stop the bot process, pull the latest changes, then run:
-
-```powershell
-npm ci ; npm run db:up
-npm run prisma:generate ; npm run prisma:migrate
-```
-
-For Pixy AI Tickets, run the idempotent seed step after migrations:
+Stop the bot, pull the latest changes, and prepare the updated application:
 
 ```powershell
+git pull origin main
+npm ci
+npm run db:up
+npm run prisma:generate
+npm run prisma:migrate
 npm run prisma:seed
+npm start
 ```
 
-Then restart the bot with `node .` or `npm start`.
+Never commit `.env`, `.env.docker`, Discord tokens, Groq credentials, database passwords, payment information, or encryption keys.

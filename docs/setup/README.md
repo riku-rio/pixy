@@ -1,27 +1,23 @@
-# Setup guides
+# Pixy AI Tickets setup guides
 
-Choose the guide for the machine that will run Pixy:
+These guides apply only to the public multi-server **Pixy AI Tickets** bot:
 
 - [Windows quick start](WINDOWS.md) — PowerShell and Docker Desktop
-- [Ubuntu quick start](UBUNTU.md) — Ubuntu, Docker Engine, and Docker Compose
-- [Troubleshooting](TROUBLESHOOTING.md) — database ports, Prisma connectivity, environment files, Discord commands, and encryption-key recovery
+- [Ubuntu quick start](UBUNTU.md) — Docker Engine and Docker Compose
+- [Troubleshooting](TROUBLESHOOTING.md) — Docker, port 3306, Prisma, environment files, Discord commands, and credential recovery
 
-## Repository roles
+## Setup order
 
-- **Pixy AI Tickets** is the public multi-server AI ticket assistant. Its local MySQL service uses host port `3306`, and its setup includes `npm run prisma:seed`.
-- **Pixy System** is the companion Discord system bot. Its local MySQL service uses host port `3308`, and it currently has no seed command.
-
-Keep each repository in a separate directory. Both projects can run at the same time because their Docker Compose files publish MySQL on different host ports.
-
-## Shared setup order
-
-1. Clone the repository or pull `main`.
+1. Clone `riku-rio/pixy-ai-tickets` or pull the latest `main` branch.
 2. Copy `.env.example` to `.env` and `.env.docker.example` to `.env.docker`.
-3. Fill in Discord, database, and project-specific values.
-4. Run `npm ci`.
-5. Run `npm run db:up`.
-6. Generate Prisma Client and deploy migrations.
-7. Run the Pixy AI Tickets seed command when setting up that repository.
-8. Start the bot with `node .` or `npm start`.
+3. Fill the Discord, billing-owner, database, and encryption values.
+4. Install dependencies with `npm ci`.
+5. Start MySQL with `npm run db:up`.
+6. Run `npm run prisma:generate`.
+7. Run `npm run prisma:migrate`.
+8. Run `npm run prisma:seed`.
+9. Start Pixy AI Tickets with `npm start` or `node .`.
 
-Never commit `.env`, `.env.docker`, Discord tokens, API keys, database passwords, or encryption keys.
+Pixy AI Tickets uses local MySQL host port `3306` and requires the seed step after migrations.
+
+Pixy System is a separate bot with its own setup documentation in the [`pixy-system`](https://github.com/riku-rio/pixy-system) repository.
