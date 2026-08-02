@@ -4,6 +4,8 @@ const Module = require("node:module");
 
 const sourcePath = path.join(__dirname, "seed-blocked-terms.js");
 let source = fs.readFileSync(sourcePath, "utf8");
+// Normalize line endings so the bootstrap check works on all platforms
+source = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 const sqliteBootstrap = `const { PrismaClient } = require("@prisma/client");\nconst { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");\n\nconst adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL });\nconst prisma = new PrismaClient({ adapter });`;
 const mysqlBootstrap = `const { prisma } = require("../src/config/prisma");`;
 
