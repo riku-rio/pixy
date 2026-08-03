@@ -45,7 +45,7 @@ test("all Phase 9 commands are owner-only and enforce exact argument counts", ()
   }
 });
 
-test("owner help documents billing, Partner syntax, duration units, and examples", () => {
+test("owner help documents billing, analysis, Partner syntax, duration units, and examples", () => {
   const content = buildOwnerHelpPayload(makeMessage().message).content;
   for (const expected of [
     "^activate <guild-id>",
@@ -53,9 +53,11 @@ test("owner help documents billing, Partner syntax, duration units, and examples
     "^custom <guild-id> <duration>",
     "^deactivate <guild-id>",
     "^status <guild-id>",
+    "^status analyze",
     "^partner add <guild-id>",
     "^partner remove <guild-id>",
     "^partner list",
+    "YES / NOT YET / NO",
     "30-day months",
     "365-day years",
     "14d",
@@ -67,19 +69,12 @@ test("owner help documents billing, Partner syntax, duration units, and examples
   }
 });
 
-test("owner help tries DM first, falls back to channel, and stays silent for non-owners", async () => {
-  const dm = makeMessage();
-  assert.deepEqual(await executeHelp(dm.message), { delivered: "dm" });
-  assert.equal(dm.dms.length, 1);
-  assert.equal(dm.replies.length, 0);
-
-  const fallback = makeMessage();
-  fallback.message.author.send = async () => {
-    throw new Error("DMs disabled");
-  };
-  assert.deepEqual(await executeHelp(fallback.message), { delivered: "channel" });
-  assert.equal(fallback.replies.length, 1);
-  assert.deepEqual(fallback.replies[0].allowedMentions, { parse: [] });
+test("owner help replies in channel and stays silent for non-owners", async () => {
+  const owner = makeMessage();
+  assert.deepEqual(await executeHelp(owner.message), { delivered: "channel" });
+  assert.equal(owner.replies.length, 1);
+  assert.equal(owner.dms.length, 0);
+  assert.deepEqual(owner.replies[0].allowedMentions, { parse: [] });
 
   const unauthorized = makeMessage({ authorId: OTHER_USER_ID });
   unauthorized.message.content = "^help";

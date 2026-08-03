@@ -363,13 +363,14 @@ async function executePartner(message, args, options = {}) {
 
 function buildOwnerHelpPayload(message) {
   const prefix = getOwnerCommandPrefix(message);
-  return buildOwnerInfo("Pixy owner billing commands", [
-    `\`${prefix}help\` — DM this owner command reference when possible.`,
+  return buildOwnerInfo("Pixy owner commands", [
+    `\`${prefix}help\` — Show this owner command reference in the current channel.`,
     `\`${prefix}activate <guild-id>\` — Start 30 days of Pro from now.`,
     `\`${prefix}resub <guild-id>\` — Add 30 days after an active Pro expiry.`,
     `\`${prefix}custom <guild-id> <duration>\` — Add a custom Pro duration from the active expiry, or from now when Pro is inactive.`,
     `\`${prefix}deactivate <guild-id>\` — End active Pro immediately while preserving Trial and Partner state.`,
     `\`${prefix}status <guild-id>\` — Show the complete billing state and latest audit event.`,
+    `\`${prefix}status analyze\` — Show global plan counts, ticket usage, growth, calculation notes, and the current YES / NOT YET / NO project and VPS decision.`,
     `\`${prefix}partner add <guild-id>\` — Enable Partner while preserving Trial and Pro dates.`,
     `\`${prefix}partner remove <guild-id>\` — Disable Partner and reveal the fallback plan.`,
     `\`${prefix}partner list\` — List active Partner guilds.`,
