@@ -4,14 +4,8 @@ const {
   loadGuildEntitlementState,
 } = require("../../billing/entitlementService");
 const {
-  buildTicketControlPayload,
+  buildModeAwareTicketControlPayload,
 } = require("../../components/ticketAiControls");
-const {
-  buildSmartOverlayPayload,
-} = require("../../components/smartOverlayControls");
-const {
-  isFullTicketControlEnabled,
-} = require("../../features/ticketOperatingMode");
 
 async function trackTicketChannel(channel, options = {}) {
   const client = options.client || prisma;
@@ -78,12 +72,11 @@ async function trackTicketChannel(channel, options = {}) {
     },
   });
 
-  const payload = isFullTicketControlEnabled(setting)
-    ? buildTicketControlPayload(true, { plan: entitlement.plan })
-    : buildSmartOverlayPayload(true, {
-        plan: entitlement.plan,
-        settings: setting,
-      });
+  const payload = buildModeAwareTicketControlPayload(true, {
+    plan: entitlement.plan,
+    settings: setting,
+    escalated: false,
+  });
   await channel.send(payload);
 
   return {
