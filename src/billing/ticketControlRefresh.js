@@ -18,6 +18,12 @@ function getLogger(options = {}) {
   return options.logger || console;
 }
 
+function loadSettingsSafely(guildId, client) {
+  return client.guildSetting?.findUnique
+    ? loadGuildFeatureSettings(guildId, { client })
+    : Promise.resolve(null);
+}
+
 function logRefreshFailure(logger, message, details, error) {
   const payload = {
     ...details,
@@ -46,7 +52,7 @@ async function refreshOpenTicketControlForChannel({
   try {
     const [currentEntitlement, currentSettings] = await Promise.all([
       entitlement || loadGuildEntitlementState(guildId, { client, now }),
-      settings || loadGuildFeatureSettings(guildId, { client }),
+      settings || loadSettingsSafely(guildId, client),
     ]);
 
     const controlMessage = await findTicketControlMessage(channel);
@@ -123,7 +129,7 @@ async function refreshOpenTicketControlsForGuild(guildId, options = {}) {
         client,
         now: options.now,
       }),
-      loadGuildFeatureSettings(guildId, { client }),
+      loadSettingsSafely(guildId, client),
       client.ticketChannel.findMany({
         where: {
           guildId,
