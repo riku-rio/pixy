@@ -126,7 +126,6 @@ async function logAiUsage({ message, config, aiResult, status, error }) {
 function buildPromptForEntitlement({
   entitlement,
   context,
-  config,
   userName,
   userMessage,
 }) {
@@ -147,7 +146,6 @@ function buildPromptForEntitlement({
     learnedQna: context.learnedQna,
     learnedFreeform: context.learnedFreeform,
     adminRoutes: context.adminRoutes,
-    customSystemPrompt: config.aiSystemPrompt,
   });
 }
 
@@ -223,7 +221,6 @@ const messageCreateEvent = {
       const messages = buildPromptForEntitlement({
         entitlement,
         context,
-        config,
         userName: message.member?.displayName || message.author.username,
         userMessage,
       });
