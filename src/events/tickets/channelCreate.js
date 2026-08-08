@@ -6,6 +6,12 @@ const {
 const {
   buildTicketControlPayload,
 } = require("../../components/ticketAiControls");
+const {
+  buildSmartOverlayPayload,
+} = require("../../components/smartOverlayControls");
+const {
+  isFullTicketControlEnabled,
+} = require("../../features/ticketOperatingMode");
 
 async function trackTicketChannel(channel, options = {}) {
   const client = options.client || prisma;
@@ -17,9 +23,14 @@ async function trackTicketChannel(channel, options = {}) {
     return { tracked: false, code: "unsupported_channel_type" };
   }
 
-  const config = await client.guildConfig.findUnique({
-    where: { guildId: channel.guild.id },
-  });
+  const [config, setting] = await Promise.all([
+    client.guildConfig.findUnique({
+      where: { guildId: channel.guild.id },
+    }),
+    client.guildSetting.findUnique({
+      where: { guildId: channel.guild.id },
+    }),
+  ]);
 
   if (!config?.enabled || !config.ticketCategoryId) {
     return { tracked: false, code: "ticket_category_not_configured" };
@@ -65,9 +76,12 @@ async function trackTicketChannel(channel, options = {}) {
     },
   });
 
-  const payload = buildTicketControlPayload(true, {
-    plan: entitlement.plan,
-  });
+  const payload = isFullTicketControlEnabled(setting)
+    ? buildTicketControlPayload(true, { plan: entitlement.plan })
+    : buildSmartOverlayPayload(true, {
+        plan: entitlement.plan,
+        settings: setting,
+      });
   await channel.send(payload);
 
   return {
