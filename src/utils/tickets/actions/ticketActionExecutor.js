@@ -38,26 +38,19 @@ function buildOverlayHandoffReply(actionRequest, roleName) {
   return `I've handed this ticket off to **${roleName}** for human review. Pixy automatic replies are now paused so the support team can continue with you here without moving or renaming the ticket.`;
 }
 
-async function refreshEscalatedTicketControls(channel, fullControl) {
-  if (fullControl) {
-    const {
-      refreshTicketControlMessage,
-    } = require("../../../components/ticketAiControls");
-    await refreshTicketControlMessage(channel, false);
-    return;
-  }
-
+async function refreshEscalatedTicketControls(channel, settings) {
   const {
-    findTicketControlMessage,
+    refreshTicketControlMessage,
   } = require("../../../components/ticketAiControls");
-  const controlMessage = await findTicketControlMessage(channel);
-  if (!controlMessage) return;
 
-  await controlMessage.edit({
-    content: "🤝 **Pixy handed this ticket to human support.** Automatic AI replies are paused while the support team reviews it.",
-    components: [],
-    allowedMentions: { parse: [] },
+  const result = await refreshTicketControlMessage(channel, false, {
+    settings,
+    escalated: true,
   });
+
+  if (!result.ok) {
+    throw new Error(result.code || "control_message_not_found");
+  }
 }
 
 async function executeRenameTicket({ message, validation }) {
@@ -150,7 +143,7 @@ async function executeEscalateTicket({ actionRequest, message, validation }) {
       text: replyText,
     });
 
-    await refreshEscalatedTicketControls(message.channel, fullControl).catch((error) => {
+    await refreshEscalatedTicketControls(message.channel, settings).catch((error) => {
       console.error("Failed to refresh ticket controls after escalation:", error);
     });
 
