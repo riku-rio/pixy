@@ -4,15 +4,9 @@ const {
   loadGuildFeatureSettings,
 } = require("./entitlementService");
 const {
-  buildTicketControlPayload,
+  buildModeAwareTicketControlPayload,
   findTicketControlMessage,
 } = require("../components/ticketAiControls");
-const {
-  buildSmartOverlayPayload,
-} = require("../components/smartOverlayControls");
-const {
-  isFullTicketControlEnabled,
-} = require("../features/ticketOperatingMode");
 
 function getLogger(options = {}) {
   return options.logger || console;
@@ -21,6 +15,15 @@ function getLogger(options = {}) {
 function loadSettingsSafely(guildId, client) {
   return client.guildSetting?.findUnique
     ? loadGuildFeatureSettings(guildId, { client })
+    : Promise.resolve(null);
+}
+
+function loadTicketStateSafely(channelId, client) {
+  return client.ticketChannel?.findUnique
+    ? client.ticketChannel.findUnique({
+        where: { channelId },
+        select: { escalated: true },
+      })
     : Promise.resolve(null);
 }
 
@@ -43,6 +46,7 @@ async function refreshOpenTicketControlForChannel({
   now,
   entitlement,
   settings,
+  ticket,
   logger = console,
 }) {
   if (!guildId || !channel) {
@@ -50,9 +54,10 @@ async function refreshOpenTicketControlForChannel({
   }
 
   try {
-    const [currentEntitlement, currentSettings] = await Promise.all([
+    const [currentEntitlement, currentSettings, currentTicket] = await Promise.all([
       entitlement || loadGuildEntitlementState(guildId, { client, now }),
       settings || loadSettingsSafely(guildId, client),
+      ticket || loadTicketStateSafely(channel.id, client),
     ]);
 
     const controlMessage = await findTicketControlMessage(channel);
@@ -60,12 +65,11 @@ async function refreshOpenTicketControlForChannel({
       return { ok: false, code: "control_message_not_found" };
     }
 
-    const payload = isFullTicketControlEnabled(currentSettings)
-      ? buildTicketControlPayload(aiEnabled, { plan: currentEntitlement.plan })
-      : buildSmartOverlayPayload(aiEnabled, {
-          plan: currentEntitlement.plan,
-          settings: currentSettings,
-        });
+    const payload = buildModeAwareTicketControlPayload(aiEnabled, {
+      plan: currentEntitlement.plan,
+      settings: currentSettings,
+      escalated: currentTicket?.escalated === true,
+    });
 
     await controlMessage.edit(payload);
 
@@ -138,6 +142,7 @@ async function refreshOpenTicketControlsForGuild(guildId, options = {}) {
         select: {
           channelId: true,
           aiEnabled: true,
+          escalated: true,
         },
       }),
       resolveGuild(guildId, options),
@@ -179,6 +184,7 @@ async function refreshOpenTicketControlsForGuild(guildId, options = {}) {
         now: options.now,
         entitlement,
         settings,
+        ticket,
         logger,
       });
 
