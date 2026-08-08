@@ -27,9 +27,11 @@ async function trackTicketChannel(channel, options = {}) {
     client.guildConfig.findUnique({
       where: { guildId: channel.guild.id },
     }),
-    client.guildSetting.findUnique({
-      where: { guildId: channel.guild.id },
-    }),
+    client.guildSetting?.findUnique
+      ? client.guildSetting.findUnique({
+          where: { guildId: channel.guild.id },
+        })
+      : Promise.resolve(null),
   ]);
 
   if (!config?.enabled || !config.ticketCategoryId) {
