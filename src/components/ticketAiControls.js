@@ -7,7 +7,8 @@ const {
 } = require("../billing/entitlementService");
 const { prisma } = require("../config/prisma");
 const {
-  isFullTicketControlEnabled,
+  TICKET_OPERATING_MODES,
+  resolveTicketOperatingMode,
 } = require("../features/ticketOperatingMode");
 const ticketControls = require("./ticketControls");
 const {
@@ -44,13 +45,18 @@ function resolveTicketControlRenderState(options = {}) {
 
 function buildTicketControlContent(aiEnabled = true, options = {}) {
   const { premiumEntitled } = resolveTicketControlRenderState(options);
+  const mode = resolveTicketOperatingMode(options.settings);
 
   return [
     "Hello 👋 I'm Pixy AI. Ask your question here and I'll try to help while the support team reviews your ticket.",
     "",
-    premiumEntitled ? "**Ticket Actions**" : "**Pixy AI Control**",
     premiumEntitled
-      ? "Use the menu below if you want to escalate, rename, close, pause, or resume Pixy AI."
+      ? mode === TICKET_OPERATING_MODES.CUSTOM
+        ? "**Custom Ticket Controls**"
+        : "**Ticket Actions**"
+      : "**Pixy AI Control**",
+    premiumEntitled
+      ? "Use the menu below for the ticket actions enabled by this server and to pause or resume Pixy AI."
       : "Pixy Pro ticket actions are unavailable, but server staff can still pause or resume automatic AI replies.",
     options.escalated === true
       ? "🤝 **Human support requested** — this ticket has already been handed off for review."
@@ -60,6 +66,35 @@ function buildTicketControlContent(aiEnabled = true, options = {}) {
       ? "🤖 **Pixy AI is ON** — staff can pause or resume automatic replies at any time."
       : "⏸️ **Pixy AI is OFF** — staff can pause or resume automatic replies at any time.",
   ].filter((line) => line !== null).join("\n");
+}
+
+function filterTicketActionOptions(selectMenu, options = {}) {
+  if (!selectMenu || !Array.isArray(selectMenu.options)) return;
+
+  const settings = options.settings;
+  const hasSettings = settings && typeof settings === "object";
+  const agentActionsEnabled = !hasSettings || settings.agentActionsEnabled !== false;
+  const allowed = {
+    escalate:
+      agentActionsEnabled &&
+      options.escalated !== true &&
+      (!hasSettings || settings.escalationEnabled === true),
+    rename:
+      agentActionsEnabled &&
+      (!hasSettings || settings.renameReviewEnabled === true),
+    close:
+      agentActionsEnabled &&
+      (!hasSettings || settings.closeTicketEnabled === true),
+  };
+
+  for (let index = selectMenu.options.length - 1; index >= 0; index -= 1) {
+    const value = selectMenu.options[index]?.data?.value;
+    if (Object.prototype.hasOwnProperty.call(allowed, value) && !allowed[value]) {
+      if (typeof selectMenu.spliceOptions === "function") {
+        selectMenu.spliceOptions(index, 1);
+      }
+    }
+  }
 }
 
 function buildCombinedTicketControlComponents(aiEnabled = true, options = {}) {
@@ -74,6 +109,8 @@ function buildCombinedTicketControlComponents(aiEnabled = true, options = {}) {
   const aiOption = buildTicketAiOption(aiEnabled);
 
   if (!selectMenu) return buildAiOnlyTicketControlComponents(aiEnabled);
+
+  filterTicketActionOptions(selectMenu, options);
 
   const resetIndex = Array.isArray(selectMenu.options)
     ? selectMenu.options.findIndex((option) => option?.data?.value === "reset")
@@ -101,11 +138,13 @@ function buildTicketControlPayload(aiEnabled = true, options = {}) {
 }
 
 function buildModeAwareTicketControlPayload(aiEnabled = true, options = {}) {
-  if (isFullTicketControlEnabled(options.settings)) {
-    return buildTicketControlPayload(aiEnabled, options);
+  const mode = resolveTicketOperatingMode(options.settings);
+
+  if (mode === TICKET_OPERATING_MODES.OVERLAY) {
+    return buildSmartOverlayPayload(aiEnabled, options);
   }
 
-  return buildSmartOverlayPayload(aiEnabled, options);
+  return buildTicketControlPayload(aiEnabled, options);
 }
 
 function buildTicketAiStateMessage({ enabled, previousEnabled, changed }) {
@@ -187,7 +226,7 @@ function isTicketControlMessage(message) {
   if (/\*\*Smart Overlay\*\*/.test(content) && /Pixy AI is (?:ON|OFF)/i.test(content)) {
     return true;
   }
-  if (/\*\*(?:Ticket Actions|Pixy AI Control)\*\*/.test(content) && /Pixy AI is (?:ON|OFF)/i.test(content)) {
+  if (/\*\*(?:Ticket Actions|Custom Ticket Controls|Pixy AI Control)\*\*/.test(content) && /Pixy AI is (?:ON|OFF)/i.test(content)) {
     return true;
   }
   if (content.startsWith("🤝 **Pixy handed this ticket to human support.**")) {
@@ -354,6 +393,7 @@ module.exports = {
   buildModeAwareTicketControlPayload,
   buildTicketAiStateMessage,
   canControlTicketAi,
+  filterTicketActionOptions,
   findTicketControlMessage,
   isTicketControlMessage,
   refreshTicketControlMessage,
