@@ -8,6 +8,12 @@ const {
 } = require("../features/learnSubscription");
 
 const DEFAULT_ERROR_MESSAGE = "An error occurred while executing this interaction.";
+const SETTINGS_TOGGLE_PREFIX = "settings_toggle:";
+const TICKET_CONTROL_SETTING_FIELDS = new Set([
+  "closeTicketEnabled",
+  "renameReviewEnabled",
+  "escalationEnabled",
+]);
 
 function toArray(value) {
   if (!value) return [];
@@ -49,6 +55,38 @@ async function safeReply(interaction, payload) {
   } catch {
     // Prevent crashes if Discord rejects the reply or follow-up.
   }
+}
+
+function shouldRefreshTicketControlsAfterSettingsChange(interaction) {
+  if (!interaction?.guild?.id) return false;
+  if (!String(interaction.customId || "").startsWith(SETTINGS_TOGGLE_PREFIX)) return false;
+  return TICKET_CONTROL_SETTING_FIELDS.has(interaction.values?.[0]);
+}
+
+async function refreshTicketControlsAfterSettingsChange(interaction, options = {}) {
+  if (!shouldRefreshTicketControlsAfterSettingsChange(interaction)) {
+    return { ok: true, skipped: true };
+  }
+
+  const refreshControls = options.refreshControls || require("../billing/ticketControlRefresh").refreshOpenTicketControlsForGuild;
+  const result = await refreshControls(interaction.guild.id, {
+    guild: interaction.guild,
+    discordClient: interaction.client,
+  });
+
+  if (!result?.ok) {
+    const logger = options.logger || console;
+    logger.warn?.("Pixy settings changed but one or more open ticket controls could not be refreshed:", {
+      guildId: interaction.guild.id,
+      field: interaction.values?.[0],
+      code: result?.code || "unknown_refresh_failure",
+      attempted: result?.attempted,
+      refreshed: result?.refreshed,
+      failed: result?.failed,
+    });
+  }
+
+  return result;
 }
 
 async function refreshExpiredTicketControls(interaction, aiEnabled) {
@@ -328,7 +366,17 @@ const interactionCreateEvent = {
     if (isAnySelectMenu(interaction)) {
       if (await stopUnavailableTicketAction(interaction)) return;
       const handler = findSelectMenuHandler(interaction);
-      if (handler) await runInteraction(interaction, `Select menu ${interaction.customId}`, handler, () => handler.execute(interaction));
+      if (handler) {
+        await runInteraction(
+          interaction,
+          `Select menu ${interaction.customId}`,
+          handler,
+          async () => {
+            await handler.execute(interaction);
+            await refreshTicketControlsAfterSettingsChange(interaction);
+          }
+        );
+      }
       return;
     }
 
@@ -352,7 +400,9 @@ const interactionCreateEvent = {
 module.exports = Object.assign(interactionCreateEvent, {
   getInteractionErrorMessage,
   refreshExpiredTicketControls,
+  refreshTicketControlsAfterSettingsChange,
   safeReply,
+  shouldRefreshTicketControlsAfterSettingsChange,
   stopUnavailableLearnInteraction,
   stopUnavailableTicketAction,
 });

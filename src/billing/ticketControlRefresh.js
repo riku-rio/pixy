@@ -1,10 +1,27 @@
 const { prisma } = require("../config/prisma");
 const {
   loadGuildEntitlementState,
+  loadGuildFeatureSettings,
 } = require("./entitlementService");
+const {
+  buildTicketControlPayload,
+  findTicketControlMessage,
+} = require("../components/ticketAiControls");
+const {
+  buildSmartOverlayPayload,
+} = require("../components/smartOverlayControls");
+const {
+  isFullTicketControlEnabled,
+} = require("../features/ticketOperatingMode");
 
 function getLogger(options = {}) {
   return options.logger || console;
+}
+
+function loadSettingsSafely(guildId, client) {
+  return client.guildSetting?.findUnique
+    ? loadGuildFeatureSettings(guildId, { client })
+    : Promise.resolve(null);
 }
 
 function logRefreshFailure(logger, message, details, error) {
@@ -25,6 +42,7 @@ async function refreshOpenTicketControlForChannel({
   client = prisma,
   now,
   entitlement,
+  settings,
   logger = console,
 }) {
   if (!guildId || !channel) {
@@ -32,22 +50,28 @@ async function refreshOpenTicketControlForChannel({
   }
 
   try {
-    const currentEntitlement = entitlement || await loadGuildEntitlementState(
-      guildId,
-      { client, now }
-    );
-    const {
-      refreshTicketControlMessage,
-    } = require("../components/ticketAiControls");
+    const [currentEntitlement, currentSettings] = await Promise.all([
+      entitlement || loadGuildEntitlementState(guildId, { client, now }),
+      settings || loadSettingsSafely(guildId, client),
+    ]);
 
-    const result = await refreshTicketControlMessage(
-      channel,
-      aiEnabled,
-      { plan: currentEntitlement.plan }
-    );
+    const controlMessage = await findTicketControlMessage(channel);
+    if (!controlMessage) {
+      return { ok: false, code: "control_message_not_found" };
+    }
+
+    const payload = isFullTicketControlEnabled(currentSettings)
+      ? buildTicketControlPayload(aiEnabled, { plan: currentEntitlement.plan })
+      : buildSmartOverlayPayload(aiEnabled, {
+          plan: currentEntitlement.plan,
+          settings: currentSettings,
+        });
+
+    await controlMessage.edit(payload);
 
     return {
-      ...result,
+      ok: true,
+      message: controlMessage,
       guildId,
       channelId: channel.id,
       plan: currentEntitlement.plan,
@@ -100,11 +124,12 @@ async function refreshOpenTicketControlsForGuild(guildId, options = {}) {
   const logger = getLogger(options);
 
   try {
-    const [entitlement, tickets, guild] = await Promise.all([
+    const [entitlement, settings, tickets, guild] = await Promise.all([
       loadGuildEntitlementState(guildId, {
         client,
         now: options.now,
       }),
+      loadSettingsSafely(guildId, client),
       client.ticketChannel.findMany({
         where: {
           guildId,
@@ -153,6 +178,7 @@ async function refreshOpenTicketControlsForGuild(guildId, options = {}) {
         client,
         now: options.now,
         entitlement,
+        settings,
         logger,
       });
 
