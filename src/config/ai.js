@@ -20,7 +20,7 @@ const defaultAiConfig = Object.freeze({
   maxAdminRoutesPerGuild: 10,
   ticketCloseDeleteDelayMs: 2500,
   actionMaxReplyChars: 1000,
-  renameReviewEnabled: true,
+  renameReviewEnabled: false,
   escalationNotificationChannelName: "pixy-notifications",
 });
 
@@ -45,7 +45,14 @@ async function getOrCreateGuildSetting(guildId) {
 
   try {
     return await prisma.guildSetting.create({
-      data: { guildId: normalizedGuildId },
+      data: {
+        guildId: normalizedGuildId,
+        aiReplyEnabled: true,
+        closeTicketEnabled: false,
+        renameReviewEnabled: false,
+        escalationEnabled: true,
+        agentActionsEnabled: true,
+      },
     });
   } catch (error) {
     if (error?.code !== "P2002") throw error;
